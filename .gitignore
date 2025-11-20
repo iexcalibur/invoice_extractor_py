@@ -37,6 +37,9 @@ Thumbs.db
 output/
 *.log
 
-
+# Environment variables
 .env
 .env.local
+
+# PDF files
+*.pdf
