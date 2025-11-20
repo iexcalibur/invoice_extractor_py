@@ -26,13 +26,11 @@ class InvoiceDatabase:
     
     def _create_tables(self):
         """Create database tables if they don't exist"""
-        # Use check_same_thread=False for Flask compatibility
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row  # Enable column access by name
+        self.conn.row_factory = sqlite3.Row
         
         cursor = self.conn.cursor()
         
-        # Create Invoices table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS invoices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +49,6 @@ class InvoiceDatabase:
             )
         """)
         
-        # Create LineItems table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS line_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,7 +64,6 @@ class InvoiceDatabase:
             )
         """)
         
-        # Create indexes for better query performance
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_invoices_vendor 
             ON invoices(vendor_name)
@@ -98,7 +94,6 @@ class InvoiceDatabase:
         if not vendor_name:
             return ""
         
-        # Remove common suffixes
         suffixes = [' inc', ' inc.', ' incorporated', ' corp', ' corp.', 
                    ' corporation', ' ltd', ' ltd.', ' limited', ' llc', 
                    ' llc.', ' pty', ' pty.', ' pty ltd', ' pty ltd.']
@@ -111,7 +106,6 @@ class InvoiceDatabase:
                 normalized = normalized[:-len(suffix)].strip()
                 break
         
-        # Title case
         normalized = normalized.title()
         
         return normalized
@@ -129,7 +123,6 @@ class InvoiceDatabase:
         if not invoice_number:
             return ""
         
-        # Remove special characters except dashes and underscores
         normalized = ''.join(c for c in invoice_number if c.isalnum() or c in ['-', '_'])
         normalized = normalized.upper().strip()
         
@@ -148,7 +141,6 @@ class InvoiceDatabase:
         if not date_str:
             return None
         
-        # Try to parse various date formats
         date_formats = [
             '%Y-%m-%d',
             '%m/%d/%Y',
@@ -170,7 +162,6 @@ class InvoiceDatabase:
             except ValueError:
                 continue
         
-        # If all formats fail, return None
         return None
     
     def normalize_amount(self, amount: Any) -> float:
@@ -190,7 +181,6 @@ class InvoiceDatabase:
             return float(amount)
         
         if isinstance(amount, str):
-            # Remove currency symbols and commas
             cleaned = amount.replace('$', '').replace('€', '').replace('£', '')
             cleaned = cleaned.replace(',', '').strip()
             
@@ -223,35 +213,29 @@ class InvoiceDatabase:
         if 'date' not in invoice_data or not invoice_data.get('date'):
             errors.append("Missing required field: date")
         
-        # total_amount can be 0.0, so check if it exists (even if 0)
         if 'total_amount' not in invoice_data or invoice_data.get('total_amount') is None:
             errors.append("Missing required field: total_amount")
         
-        # Validate date format
         if 'date' in invoice_data and invoice_data['date']:
             normalized_date = self.normalize_date(invoice_data['date'])
             if not normalized_date:
                 errors.append(f"Invalid date format: {invoice_data['date']}")
         
-        # Validate amounts are numeric
         if 'total_amount' in invoice_data:
             try:
                 float(invoice_data['total_amount'])
             except (ValueError, TypeError):
                 errors.append(f"Invalid total_amount: {invoice_data['total_amount']}")
         
-        # Validate line items
         if 'line_items' in invoice_data:
             for i, item in enumerate(invoice_data['line_items']):
                 if not isinstance(item, dict):
                     errors.append(f"Line item {i} is not a dictionary")
                     continue
                 
-                # Check required fields in line items
                 if 'description' not in item or not item['description']:
                     errors.append(f"Line item {i} missing description")
                 
-                # Validate numeric fields
                 for field in ['quantity', 'unit_price', 'line_total']:
                     if field in item:
                         try:
@@ -275,7 +259,6 @@ class InvoiceDatabase:
         if not self.conn:
             self._create_tables()
         
-        # Extract invoice-level data
         invoice_number = invoice_data.get('invoice_number', '')
         vendor_name = invoice_data.get('vendor_name', '')
         date_str = invoice_data.get('date', '')
@@ -283,7 +266,6 @@ class InvoiceDatabase:
         extraction_method = invoice_data.get('extraction_method', 'unknown')
         validated = invoice_data.get('validated', False)
         
-        # Normalize fields
         normalized_invoice_number = self.normalize_invoice_number(invoice_number)
         normalized_vendor = self.normalize_vendor_name(vendor_name)
         normalized_date = self.normalize_date(date_str)
@@ -293,7 +275,6 @@ class InvoiceDatabase:
             print(f"Warning: Could not normalize date '{date_str}', skipping invoice")
             return None
         
-        # Get source file name
         source_pdf_name = None
         if file_path:
             source_pdf_name = Path(file_path).name
@@ -301,7 +282,6 @@ class InvoiceDatabase:
         cursor = self.conn.cursor()
         
         try:
-            # Insert or update invoice
             cursor.execute("""
                 INSERT INTO invoices (
                     invoice_number, vendor_name, invoice_date, total_amount,
@@ -326,10 +306,8 @@ class InvoiceDatabase:
                 1 if validated else 0
             ))
             
-            # Get invoice ID
             invoice_id = cursor.lastrowid
             
-            # If invoice already existed, get its ID
             if invoice_id == 0:
                 cursor.execute("""
                     SELECT id FROM invoices 
@@ -338,10 +316,8 @@ class InvoiceDatabase:
                 row = cursor.fetchone()
                 if row:
                     invoice_id = row['id']
-                    # Delete existing line items
                     cursor.execute("DELETE FROM line_items WHERE invoice_id = ?", (invoice_id,))
             
-            # Insert line items
             line_items = invoice_data.get('line_items', [])
             for order, item in enumerate(line_items, 1):
                 description = item.get('description', '').strip()
@@ -349,7 +325,6 @@ class InvoiceDatabase:
                 unit_price = self.normalize_amount(item.get('unit_price', 0.0))
                 line_total = self.normalize_amount(item.get('line_total', 0.0))
                 
-                # Skip empty line items
                 if not description:
                     continue
                 
@@ -400,7 +375,6 @@ class InvoiceDatabase:
             if 'error' in page:
                 continue
             
-            # Validate before saving
             is_valid, validation_errors = self.validate_invoice(page)
             if not is_valid:
                 errors.extend(validation_errors)
@@ -439,14 +413,12 @@ class InvoiceDatabase:
         
         cursor = self.conn.cursor()
         
-        # Get invoice
         cursor.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
         invoice_row = cursor.fetchone()
         
         if not invoice_row:
             return None
         
-        # Get line items
         cursor.execute("""
             SELECT * FROM line_items 
             WHERE invoice_id = ? 
@@ -454,7 +426,6 @@ class InvoiceDatabase:
         """, (invoice_id,))
         line_item_rows = cursor.fetchall()
         
-        # Build result dictionary
         invoice = dict(invoice_row)
         invoice['line_items'] = [
             dict(item) for item in line_item_rows
@@ -490,7 +461,6 @@ class InvoiceDatabase:
             invoice = dict(invoice_row)
             invoice_id = invoice['id']
             
-            # Get line items
             cursor.execute("""
                 SELECT * FROM line_items 
                 WHERE invoice_id = ? 

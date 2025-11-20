@@ -36,3 +36,7 @@ Thumbs.db
 # Output
 output/
 *.log
+
+
+.env
+.env.local

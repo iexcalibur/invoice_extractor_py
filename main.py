@@ -11,12 +11,9 @@ import argparse
 from pathlib import Path
 from typing import List
 
-# Use enhanced extractor
-from invoice_extractor_enhanced import EnhancedInvoiceExtractor, extract_invoice_enhanced
-ENHANCED_AVAILABLE = True
+from invoice_extractor import EnhancedInvoiceExtractor
 
 from config import Config
-from formatter import InvoiceFormatter
 from database import InvoiceDatabase
 
 
@@ -27,18 +24,16 @@ def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceD
     print(f"{'='*60}")
     
     try:
-        # Use enhanced extractor with hybrid approach
         extractor = EnhancedInvoiceExtractor(
             api_key=Config.get_api_key() if Config.validate() else None,
+            use_regex=True,  
             use_layoutlmv3=True,
             use_ocr=True
         )
         result = extractor.extract_robust(file_path)
         
-        # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
         
-        # Save results to JSON
         file_name = Path(file_path).stem
         output_file = os.path.join(output_dir, f"{file_name}_extracted.json")
         
@@ -47,7 +42,6 @@ def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceD
         
         print(f"\n✓ Results saved to: {output_file}")
         
-        # Print summary
         if result.get('status') == 'success':
             print("\n✓ Extraction successful!")
             for page in result.get('pages', []):
@@ -59,7 +53,6 @@ def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceD
                     print(f"    Total: ${page.get('total_amount', 0):.2f}")
                     print(f"    Line Items: {len(page.get('line_items', []))}")
             
-            # Format as table for specific vendors (Frank's Quality Produce, Pacific Food Importers)
             vendor_name = None
             for page in result.get('pages', []):
                 if page.get('validated'):
@@ -68,22 +61,7 @@ def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceD
                         vendor_name = page_vendor
                         break
             
-            if vendor_name:
-                table_output = InvoiceFormatter.format_as_table(result, vendor_name=vendor_name)
-                table_file = os.path.join(output_dir, f"{file_name}_table.txt")
-                with open(table_file, 'w', encoding='utf-8') as f:
-                    f.write(table_output)
-                print(f"\n✓ Table format saved to: {table_file}")
-                
-                # Also save as CSV
-                csv_file = os.path.join(output_dir, f"{file_name}_table.csv")
-                try:
-                    InvoiceFormatter.format_as_csv(result, csv_file, vendor_name=vendor_name)
-                    print(f"✓ CSV format saved to: {csv_file}")
-                except Exception as e:
-                    print(f"⚠ Could not save CSV: {e}")
             
-            # Save to database
             if db:
                 db_result = db.save_extraction_result(result, file_path)
                 if db_result['saved']:
@@ -112,7 +90,6 @@ def process_directory(directory: str, output_dir: str = "output", recursive: boo
         print(f"Error: Directory not found: {directory}")
         return []
     
-    # Find all supported files (PDF and images)
     supported_extensions = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif']
     
     if recursive:
@@ -126,7 +103,6 @@ def process_directory(directory: str, output_dir: str = "output", recursive: boo
             all_files.extend(list(directory_path.glob(f"*{ext}")))
             all_files.extend(list(directory_path.glob(f"*{ext.upper()}")))
     
-    # Remove duplicates
     all_files = list(set(all_files))
     
     if not all_files:
@@ -141,7 +117,6 @@ def process_directory(directory: str, output_dir: str = "output", recursive: boo
         result = process_single_file(str(file_path), output_dir, db)
         results.append(result)
     
-    # Summary
     print(f"\n{'='*60}")
     print("SUMMARY")
     print(f"{'='*60}")
@@ -160,7 +135,7 @@ def process_directory(directory: str, output_dir: str = "output", recursive: boo
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description="Extract invoice data from PDF and image files using hybrid approach (LayoutLMv3 → OCR → Claude)",
+        description="Extract invoice data from PDF and image files using hybrid approach (Regex → LayoutLMv3 → OCR → Claude)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -220,13 +195,11 @@ Examples:
         Config.ANTHROPIC_API_KEY = args.api_key
         os.environ['ANTHROPIC_API_KEY'] = args.api_key
     
-    # Validate configuration (API key optional for LayoutLMv3/OCR, needed for Claude fallback)
     if not Config.validate():
         print("Warning: ANTHROPIC_API_KEY not set!")
         print("Enhanced extractor can work without it (using LayoutLMv3/OCR),")
         print("but Claude fallback won't be available.")
     
-    # Initialize database
     db = None
     if not args.no_db:
         try:
@@ -238,10 +211,8 @@ Examples:
     
     input_path = Path(args.input)
     
-    # Supported file extensions
     supported_extensions = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif']
     
-    # Process input
     if input_path.is_file():
         file_ext = input_path.suffix.lower()
         if file_ext not in supported_extensions:
@@ -255,7 +226,6 @@ Examples:
         print(f"Error: {args.input} not found")
         sys.exit(1)
     
-    # Close database connection
     if db:
         db.close()
         print(f"\n✓ Database connection closed")

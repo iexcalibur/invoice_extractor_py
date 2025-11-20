@@ -5,23 +5,17 @@ Configuration settings for invoice extraction
 import os
 from typing import Optional
 
-# Try to load .env file if python-dotenv is available
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass  # python-dotenv is optional
+    pass
 
 
 class Config:
-    """Configuration class for invoice extraction"""
-    
-    # API Configuration
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
-    
-    # Model Configuration
-    DEFAULT_MODEL: str = "claude-3-opus-20240229"  # For Vision fallback (most accurate)
-    TEXT_MODEL: str = "claude-3-haiku-20240307"  # For text parsing (cheaper, 92% cost reduction)
+    DEFAULT_MODEL: str = "claude-3-opus-20240229" 
+    TEXT_MODEL: str = "claude-3-haiku-20240307" 
     
     # PDF Processing Configuration
     PDF_DPI: int = 300
