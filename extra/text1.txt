@@ -1,0 +1,62 @@
+
+⸻
+
+Frank’s Quality Produce
+3800 1st Ave S
+Seattle, WA 98134
+
+Phone: 206-624-9754
+E-mail: warehouse@franksproduce.net
+
+⸻
+
+Invoice Details
+
+Field	Value
+Date	5/13/2025
+Account #	2825
+Invoice #	20065629
+Rep	CH
+Terms	7 Days - ACH
+Due Date	5/20/2025
+
+
+⸻
+
+Ship To
+
+WESTMAN’S BAGEL-MADISON ST
+1509 E MADISON ST
+SEATTLE, WA 98122
+
+Customer Phone: 352-502-8078
+
+⸻
+
+Items
+
+Qty	Description	Price Each	Amount
+8	TOMATO, ROMA #	1.99	15.92
+2	ONION, GREEN 12BN BAG	10.00	20.00
+1	HERBS, DILL BABY #	11.00	11.00
+10	ONION, WHITE #	0.99	9.90
+6	ONION, ITALIAN RED #	0.99	5.94
+1	AVOCADO, 1 LAYER	39.00	39.00
+	FUEL SURCHARGE		7.50
+	Sales Tax (10.25%)		0.00
+
+
+⸻
+
+Total: $109.26
+
+⸻
+
+Footer:
+Frank’s Fresh Sheet is viewable on our website
+Customer initials | Driver initials
+
+⸻
+
+
+

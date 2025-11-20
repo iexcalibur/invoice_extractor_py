@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Processing System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .status {
+            padding: 20px 30px;
+            background: #fff;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .status-item {
+            display: inline-block;
+            margin-right: 30px;
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .status-item strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .alert {
+            padding: 15px 20px;
+            margin: 20px 30px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .line-items {
+            max-width: 300px;
+        }
+
+        .line-item {
+            padding: 5px 0;
+            font-size: 0.9em;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .line-item:last-child {
+            border-bottom: none;
+        }
+
+        .expand-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background 0.2s;
+        }
+
+        .expand-btn:hover {
+            background: #5568d3;
+        }
+
+        tbody tr.expanded {
+            background: #e7f3ff;
+        }
+
+        .line-items-row {
+            background: #f8f9fa !important;
+        }
+
+        .line-items-row td {
+            padding: 0;
+            border-top: 2px solid #667eea;
+        }
+
+        .line-items-container {
+            padding: 20px;
+            background: white;
+            margin: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .line-items-container h4 {
+            margin-bottom: 15px;
+            color: #667eea;
+            font-size: 1.1em;
+        }
+
+        .line-items-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            box-shadow: none;
+        }
+
+        .line-items-table thead {
+            background: #e9ecef;
+            color: #333;
+        }
+
+        .line-items-table th {
+            padding: 10px;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        .line-items-table td {
+            padding: 10px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .line-items-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .description-cell {
+            max-width: 400px;
+            word-wrap: break-word;
+        }
+
+        .line-items-table tfoot {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .total-label {
+            text-align: right;
+            padding-right: 20px;
+        }
+
+        .total-amount {
+            text-align: right;
+            color: #667eea;
+            font-size: 1.1em;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📄 Invoice Processing System</h1>
+            <p>Extract, Process, and Manage Invoice Data</p>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-primary" id="processBtn" onclick="processInvoices()">
+                <span>🔄</span> Process PDFs/Images
+            </button>
+            <button class="btn btn-secondary" id="refreshBtn" onclick="loadInvoices()">
+                <span>↻</span> Refresh Data
+            </button>
+            <button class="btn btn-danger" id="clearBtn" onclick="clearDatabase()">
+                <span>🗑️</span> Clear Database
+            </button>
+        </div>
+
+        <div class="status" id="statusSection">
+            <div class="status-item">
+                <strong>Invoices in DB</strong>
+                <span id="invoiceCount">0</span>
+            </div>
+            <div class="status-item">
+                <strong>Line Items</strong>
+                <span id="lineItemCount">0</span>
+            </div>
+            <div class="status-item">
+                <strong>Files in Data Folder</strong>
+                <span id="fileCount">0</span>
+            </div>
+        </div>
+
+        <div class="alert alert-success" id="successAlert"></div>
+        <div class="alert alert-error" id="errorAlert"></div>
+        <div class="alert alert-info" id="infoAlert"></div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 15px; color: #667eea; font-weight: 600;">Processing invoices... Please wait</p>
+        </div>
+
+        <div class="content">
+            <h2 style="margin-bottom: 20px; color: #333;">Invoice Data</h2>
+            <div class="table-container" id="tableContainer">
+                <div class="empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <h3>No invoices found</h3>
+                    <p>Click "Process PDFs/Images" to extract invoice data from the data folder</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Track expanded rows
+        const expandedRows = new Set();
+
+        // Load initial data
+        window.onload = function() {
+            loadStatus();
+            loadInvoices();
+        };
+
+        function showAlert(type, message) {
+            const alertId = type + 'Alert';
+            const alert = document.getElementById(alertId);
+            alert.textContent = message;
+            alert.classList.add('show');
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 5000);
+        }
+
+        function toggleRow(invoiceId) {
+            const row = document.querySelector(`tr[data-invoice-id="${invoiceId}"]`);
+            const lineItemsRow = document.querySelector(`tr[data-line-items-id="${invoiceId}"]`);
+            const btn = document.querySelector(`button[data-toggle-id="${invoiceId}"]`);
+            
+            if (expandedRows.has(invoiceId)) {
+                // Collapse
+                expandedRows.delete(invoiceId);
+                row.classList.remove('expanded');
+                if (lineItemsRow) lineItemsRow.style.display = 'none';
+                if (btn) btn.textContent = '▶ Show Details';
+            } else {
+                // Expand
+                expandedRows.add(invoiceId);
+                row.classList.add('expanded');
+                if (lineItemsRow) lineItemsRow.style.display = 'table-row';
+                if (btn) btn.textContent = '▼ Hide Details';
+            }
+        }
+
+        function loadStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('invoiceCount').textContent = data.database.invoices;
+                        document.getElementById('lineItemCount').textContent = data.database.line_items;
+                        document.getElementById('fileCount').textContent = data.data_folder.file_count;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading status:', error);
+                });
+        }
+
+        function processInvoices() {
+            const btn = document.getElementById('processBtn');
+            const loading = document.getElementById('loading');
+            
+            btn.disabled = true;
+            loading.classList.add('show');
+            showAlert('info', 'Processing invoices from data folder...');
+
+            fetch('/api/process', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ data_dir: 'data' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                loading.classList.remove('show');
+                btn.disabled = false;
+
+                if (data.success) {
+                    showAlert('success', 
+                        `Successfully processed ${data.processed} file(s). ` +
+                        `${data.saved_to_db} invoice(s) saved to database.`
+                    );
+                    loadStatus();
+                    loadInvoices();
+                } else {
+                    showAlert('error', 'Error: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                loading.classList.remove('show');
+                btn.disabled = false;
+                showAlert('error', 'Error processing invoices: ' + error.message);
+            });
+        }
+
+        function loadInvoices() {
+            fetch('/api/invoices')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayInvoices(data.invoices);
+                    } else {
+                        showAlert('error', 'Error loading invoices: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    showAlert('error', 'Error loading invoices: ' + error.message);
+                });
+        }
+
+        function displayInvoices(invoices) {
+            const container = document.getElementById('tableContainer');
+            
+            if (invoices.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <h3>No invoices found</h3>
+                        <p>Click "Process PDFs/Images" to extract invoice data from the data folder</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Invoice #</th>
+                            <th>Vendor</th>
+                            <th>Date</th>
+                            <th>Total Amount</th>
+                            <th>Line Items</th>
+                            <th>Method</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            invoices.forEach(invoice => {
+                const statusBadge = invoice.validated 
+                    ? '<span class="badge badge-success">Validated</span>'
+                    : '<span class="badge badge-warning">Needs Review</span>';
+                
+                const methodBadge = `<span class="badge badge-info">${invoice.extraction_method}</span>`;
+                const isExpanded = expandedRows.has(invoice.id);
+
+                // Main invoice row
+                html += `
+                    <tr data-invoice-id="${invoice.id}" class="${isExpanded ? 'expanded' : ''}">
+                        <td>${invoice.id}</td>
+                        <td><strong>${invoice.invoice_number}</strong></td>
+                        <td>${invoice.vendor_name}</td>
+                        <td>${invoice.invoice_date}</td>
+                        <td><strong>$${invoice.total_amount.toFixed(2)}</strong></td>
+                        <td>${invoice.line_items_count} items</td>
+                        <td>${methodBadge}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <button class="expand-btn" data-toggle-id="${invoice.id}" onclick="toggleRow(${invoice.id})">
+                                ${isExpanded ? '▼ Hide' : '▶ Show'} Details
+                            </button>
+                        </td>
+                    </tr>
+                `;
+
+                // Collapsible line items row
+                html += `
+                    <tr class="line-items-row" data-line-items-id="${invoice.id}" style="display: ${isExpanded ? 'table-row' : 'none'};">
+                        <td colspan="9">
+                            <div class="line-items-container">
+                                <h4>Line Items (${invoice.line_items.length})</h4>
+                                <table class="line-items-table">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Description</th>
+                                            <th>Quantity</th>
+                                            <th>Unit Price</th>
+                                            <th>Line Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                `;
+
+                invoice.line_items.forEach((item, index) => {
+                    html += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td class="description-cell">${item.description}</td>
+                            <td>${item.quantity}</td>
+                            <td>$${item.unit_price.toFixed(2)}</td>
+                            <td><strong>$${item.line_total.toFixed(2)}</strong></td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <td colspan="4" class="total-label"><strong>Invoice Total:</strong></td>
+                                            <td class="total-amount"><strong>$${invoice.total_amount.toFixed(2)}</strong></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = html;
+        }
+
+
+        function clearDatabase() {
+            if (!confirm('Are you sure you want to clear all data from the database? This action cannot be undone.')) {
+                return;
+            }
+
+            fetch('/api/clear', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert('success', 'Database cleared successfully');
+                    loadStatus();
+                    loadInvoices();
+                } else {
+                    showAlert('error', 'Error clearing database: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                showAlert('error', 'Error clearing database: ' + error.message);
+            });
+        }
+    </script>
+</body>
+</html>
+

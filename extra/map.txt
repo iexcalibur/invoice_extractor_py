@@ -1,0 +1,561 @@
+┌─────────────────────────────────────────────────────────────────┐
+│        HYBRID INVOICE PROCESSING PIPELINE ARCHITECTURE           │
+│     (Regex + OCR+LLM + Vision-LLM with Intelligent Routing)     │
+│                    32 PDFs Dataset                               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                   DATA FOLDER & PREPARATION                      │
+├─────────────────────────────────────────────────────────────────┤
+│  📁 data/                                                        │
+│  ├── 📄 invoice_001.pdf  ─┐                                     │
+│  ├── 📄 invoice_002.pdf   │  32 PDFs Total                      │
+│  ├── 📄 invoice_003.pdf   │  • Training: 22 PDFs                │
+│  ├── ...                  │  • Validation: 5 PDFs               │
+│  ├── 📄 invoice_031.pdf   │  • Test: 5 PDFs                     │
+│  └── 📄 invoice_032.pdf  ─┘                                     │
+│                                                                  │
+│  Ground Truth: 5-10 manually labeled invoices                   │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              STAGE 0: DOCUMENT QUALITY ASSESSMENT                │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Document Classification & Routing Logic                 │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Quality Metrics Extraction:                       │  │  │
+│  │  │  • Image DPI/Resolution                            │  │  │
+│  │  │  • Contrast/Sharpness score                        │  │  │
+│  │  │  • Skew detection                                  │  │  │
+│  │  │  • Text density estimation                         │  │  │
+│  │  │  • Layout complexity score                         │  │  │
+│  │  │  • File size indicator                             │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Vendor Pattern Recognition (Template Matching)    │  │  │
+│  │  │  • Check if vendor seen before                     │  │  │
+│  │  │  • Calculate similarity to known templates         │  │  │
+│  │  │  • Assign confidence score                         │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│                    ┌─── Routing Decision ───┐                   │
+│                    │                         │                   │
+│         High Quality + Known Template        │                   │
+│                    │                         │                   │
+│                    ▼                         ▼                   │
+│         ┌──────────────────┐    ┌──────────────────────┐        │
+│         │  PATH A:         │    │  PATH B:             │        │
+│         │  Fast Track      │    │  Standard Track      │        │
+│         │  (Regex First)   │    │  (LLM First)         │        │
+│         └────────┬─────────┘    └──────────┬───────────┘        │
+│                  │                          │                    │
+│                  │         Low Quality /    │                    │
+│                  │         Complex Layout   │                    │
+│                  │              │           │                    │
+│                  │              ▼           │                    │
+│                  │    ┌──────────────────┐  │                    │
+│                  │    │  PATH C:         │  │                    │
+│                  │    │  Vision Track    │  │                    │
+│                  │    │  (Vision-LLM)    │  │                    │
+│                  │    └────────┬─────────┘  │                    │
+│                  │             │            │                    │
+│                  └─────────────┴────────────┘                    │
+│                                 │                                │
+└─────────────────────────────────┼────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              STAGE 1: PREPROCESSING & OCR LAYER                  │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐        ┌─────────────────────────┐            │
+│  │ PDF Loader   │───────▶│ Image Conversion        │            │
+│  │ (PyMuPDF)    │        │ (pdf2image)             │            │
+│  │              │        │ • DPI: 300              │            │
+│  │ All 32 PDFs  │        │ • Format: PNG           │            │
+│  └──────────────┘        └──────┬──────────────────┘            │
+│                                  │                               │
+│                                  ▼                               │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Adaptive Image Enhancement Pipeline                     │  │
+│  │  (OpenCV)                                                 │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Based on quality score:                           │  │  │
+│  │  │  • High quality: Minimal processing                │  │  │
+│  │  │  • Medium: Contrast + deskew                       │  │  │
+│  │  │  • Low: Full pipeline (denoise, sharpen, binarize) │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                  │                               │
+│                                  ▼                               │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │         Dual OCR Engine (Parallel Execution)             │  │
+│  │  ┌────────────────┐         ┌──────────────────┐        │  │
+│  │  │ Tesseract OCR  │         │   EasyOCR        │        │  │
+│  │  │ (Primary)      │  +      │   (Validation)   │        │  │
+│  │  │                │         │                  │        │  │
+│  │  │ Output:        │         │ Output:          │        │  │
+│  │  │ • Text         │         │ • Text           │        │  │
+│  │  │ • Confidence   │         │ • Confidence     │        │  │
+│  │  │ • Bboxes       │         │ • Bboxes         │        │  │
+│  │  └───────┬────────┘         └────────┬─────────┘        │  │
+│  │          │                           │                   │  │
+│  │          └───────────┬───────────────┘                   │  │
+│  │                      ▼                                   │  │
+│  │          ┌──────────────────────┐                        │  │
+│  │          │  OCR Consensus       │                        │  │
+│  │          │  • Compare outputs   │                        │  │
+│  │          │  • Select best words │                        │  │
+│  │          │  • Merge results     │                        │  │
+│  │          └──────────┬───────────┘                        │  │
+│  └─────────────────────┼──────────────────────────────────┘  │
+└────────────────────────┼─────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│         STAGE 2: INTELLIGENT MULTI-PATH EXTRACTION               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────┐    │
+│  │  PATH A: REGEX-FIRST APPROACH (Fast Track)             │    │
+│  │  Triggered when: Template match > 85% confidence        │    │
+│  └────────────────────────────────────────────────────────┘    │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Step A1: Template-Specific Regex Extraction             │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Pattern Libraries by Vendor:                      │  │  │
+│  │  │  • Vendor A: invoice_patterns_A.json               │  │  │
+│  │  │  • Vendor B: invoice_patterns_B.json               │  │  │
+│  │  │  • Generic: fallback_patterns.json                 │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Field Extraction:                                 │  │  │
+│  │  │  • Invoice #: r'INV[#\s-]*(\d+)'                   │  │  │
+│  │  │  • Date: r'\d{2}/\d{2}/\d{4}'                      │  │  │
+│  │  │  • Total: r'Total[:$\s]*([\d,]+\.\d{2})'          │  │  │
+│  │  │  • Vendor: Position-based (first 3 lines)          │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Table Extraction:                                 │  │  │
+│  │  │  • Detect table boundaries                         │  │  │
+│  │  │  • Parse rows by Y-coordinate                      │  │  │
+│  │  │  • Extract columns by X-coordinate                 │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Step A2: Confidence Scoring                       │  │  │
+│  │  │  For each extracted field:                         │  │  │
+│  │  │  • Pattern match strength (0.0-1.0)                │  │  │
+│  │  │  • OCR confidence for matched text                 │  │  │
+│  │  │  • Validation rule check (format, range)           │  │  │
+│  │  │  • Cross-field consistency (total = sum of items)  │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Overall confidence = avg(field_confidences)       │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │                    ┌─ Decision Point ─┐                   │  │
+│  │                    │                   │                   │  │
+│  │         Confidence >= 0.85             │                   │  │
+│  │                    │                   │                   │  │
+│  │                    ▼                   ▼                   │  │
+│  │         ┌────────────────┐   ┌──────────────────┐         │  │
+│  │         │  Accept Result │   │  Forward to      │         │  │
+│  │         │  (Cost: $0)    │   │  LLM Validation  │         │  │
+│  │         └───────┬────────┘   └────────┬─────────┘         │  │
+│  └─────────────────┼──────────────────────┼───────────────────┘  │
+│                    │                      │                      │
+│                    │                      │                      │
+│  ┌─────────────────┼──────────────────────┼───────────────────┐  │
+│  │  PATH B: LLM-FIRST APPROACH (Standard Track)             │  │
+│  │  Triggered when: Unknown template OR regex conf < 0.85   │  │
+│  └─────────────────┼──────────────────────┼───────────────────┘  │
+│                    │                      │                      │
+│  ┌─────────────────┼──────────────────────┼───────────────────┐  │
+│  │  Step B1: LLM-Based Extraction (GPT-4/Claude)            │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Input Preparation:                                │  │  │
+│  │  │  • OCR text (from consensus engine)                │  │  │
+│  │  │  • Regex extraction results (if available)         │  │  │
+│  │  │  • Few-shot examples (3-5 from training set)       │  │  │
+│  │  │  • JSON schema definition                          │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Prompt Engineering:                               │  │  │
+│  │  │  """                                                │  │  │
+│  │  │  You are an expert invoice parser. Extract:        │  │  │
+│  │  │                                                     │  │  │
+│  │  │  OCR Text:                                          │  │  │
+│  │  │  {ocr_consensus_text}                              │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Regex attempted extraction (use as hints):        │  │  │
+│  │  │  {regex_results}                                    │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Examples of correctly extracted invoices:         │  │  │
+│  │  │  {few_shot_examples}                                │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Return JSON:                                       │  │  │
+│  │  │  {                                                  │  │  │
+│  │  │    "invoice_number": "...",                        │  │  │
+│  │  │    "date": "YYYY-MM-DD",                           │  │  │
+│  │  │    "vendor_name": "...",                           │  │  │
+│  │  │    "total_amount": 0.00,                           │  │  │
+│  │  │    "currency": "USD",                              │  │  │
+│  │  │    "line_items": [...],                            │  │  │
+│  │  │    "confidence_per_field": {...}                   │  │  │
+│  │  │  }                                                  │  │  │
+│  │  │  """                                                │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Step B2: LLM Self-Verification                    │  │  │
+│  │  │  • LLM provides field-level confidence scores      │  │  │
+│  │  │  • Cross-validates total = sum(line_items)         │  │  │
+│  │  │  • Flags inconsistencies                           │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │                    ┌─ Decision Point ─┐                   │  │
+│  │                    │                   │                   │  │
+│  │         Confidence >= 0.80             │                   │  │
+│  │                    │                   │                   │  │
+│  │                    ▼                   ▼                   │  │
+│  │         ┌────────────────┐   ┌──────────────────┐         │  │
+│  │         │  Accept Result │   │  Escalate to     │         │  │
+│  │         │  (Cost: ~$0.15)│   │  Vision-LLM      │         │  │
+│  │         └───────┬────────┘   └────────┬─────────┘         │  │
+│  └─────────────────┼──────────────────────┼───────────────────┘  │
+│                    │                      │                      │
+│                    │                      │                      │
+│  ┌─────────────────┼──────────────────────┼───────────────────┐  │
+│  │  PATH C: VISION-LLM APPROACH (Premium Track)             │  │
+│  │  Triggered when:                                          │  │
+│  │  • Low OCR quality (avg confidence < 0.7)                 │  │
+│  │  • Complex layout detected                                │  │
+│  │  • Regex + LLM both failed (conf < 0.8)                   │  │
+│  └─────────────────┼──────────────────────┼───────────────────┘  │
+│                    │                      │                      │
+│  ┌─────────────────┼──────────────────────┼───────────────────┐  │
+│  │  Step C1: Vision-LLM Direct Extraction                    │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Input:                                            │  │  │
+│  │  │  • Original invoice image (high-res)               │  │  │
+│  │  │  • Previous extraction attempts (for context)      │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Vision-LLM Prompt:                                │  │  │
+│  │  │  """                                                │  │  │
+│  │  │  This invoice image had extraction issues.         │  │  │
+│  │  │  Previous OCR+LLM attempts yielded low confidence. │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Please analyze the visual layout and extract:     │  │  │
+│  │  │  1. Invoice header information                     │  │  │
+│  │  │  2. Line items table (preserve structure)          │  │  │
+│  │  │  3. Total amounts                                  │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Pay special attention to:                         │  │  │
+│  │  │  • Multi-column layouts                            │  │  │
+│  │  │  • Merged table cells                              │  │  │
+│  │  │  • Handwritten annotations                         │  │  │
+│  │  │  • Watermarks/logos                                │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Return JSON in same schema as before.             │  │  │
+│  │  │  """                                                │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Step C2: High-Confidence Extraction               │  │  │
+│  │  │  • Vision-LLM typically achieves 90-96% accuracy   │  │  │
+│  │  │  • Accept result (cost: ~$0.50-1.00)               │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                    │                                      │  │
+│  │                    ▼                                      │  │
+│  │         ┌────────────────────┐                            │  │
+│  │         │  If still fails:   │                            │  │
+│  │         │  Flag for Manual   │                            │  │
+│  │         │  Review            │                            │  │
+│  │         └────────────────────┘                            │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                  │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│         STAGE 3: ENSEMBLE VALIDATION & CONSENSUS                 │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Multi-Method Result Aggregation                          │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  If multiple methods were used:                    │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Regex Result    LLM Result    Vision Result       │  │  │
+│  │  │      ↓              ↓              ↓               │  │  │
+│  │  │      └──────────────┴──────────────┘               │  │  │
+│  │  │                     │                               │  │  │
+│  │  │                     ▼                               │  │  │
+│  │  │          ┌──────────────────────┐                  │  │  │
+│  │  │          │  Consensus Engine    │                  │  │  │
+│  │  │          │                      │                  │  │  │
+│  │  │          │  For each field:     │                  │  │  │
+│  │  │          │  • If 2+ agree: Accept                  │  │  │
+│  │  │          │  • If all differ: Choose highest conf   │  │  │
+│  │  │          │  • Weight by method reliability         │  │  │
+│  │  │          └──────────────────────┘                  │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Cross-Field Validation Rules                             │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Business Logic Checks:                            │  │  │
+│  │  │  • Total = sum(line_item_totals) ± 1%              │  │  │
+│  │  │  • Date is within reasonable range                 │  │  │
+│  │  │  • Invoice number follows known format             │  │  │
+│  │  │  • Currency consistency across fields              │  │  │
+│  │  │  • Line item unit_price × quantity = line_total    │  │  │
+│  │  │                                                     │  │  │
+│  │  │  If validation fails:                              │  │  │
+│  │  │  • Flag specific field for review                  │  │  │
+│  │  │  • Reduce overall confidence score                 │  │  │
+│  │  │  • Log discrepancy details                         │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Confidence Score Calculation                             │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Final confidence = weighted_average(              │  │  │
+│  │  │    method_confidence,                              │  │  │
+│  │  │    field_level_confidence,                         │  │  │
+│  │  │    consensus_agreement,                            │  │  │
+│  │  │    validation_pass_rate                            │  │  │
+│  │  │  )                                                  │  │  │
+│  │  │                                                     │  │  │
+│  │  │  Confidence Tiers:                                 │  │  │
+│  │  │  • High (0.90-1.0): Auto-accept                    │  │  │
+│  │  │  • Medium (0.75-0.90): Flag for spot check        │  │  │
+│  │  │  • Low (<0.75): Mandatory manual review           │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              STAGE 4: DATA NORMALIZATION                         │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  Field-Specific Normalization Pipeline                   │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Date Normalization:                               │  │  │
+│  │  │  • Parse: dateutil.parser, datefinder              │  │  │
+│  │  │  • Handle: "01/15/2025", "Jan 15, 2025",           │  │  │
+│  │  │           "15-01-2025", "2025-01-15"               │  │  │
+│  │  │  • Output: ISO 8601 (YYYY-MM-DD)                   │  │  │
+│  │  │  • Validate: Reasonable date range                 │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Amount Normalization:                             │  │  │
+│  │  │  • Remove: $, €, commas, spaces                    │  │  │
+│  │  │  • Parse: Decimal handling (1,234.56 vs 1.234,56)  │  │  │
+│  │  │  • Convert: To float                               │  │  │
+│  │  │  • Validate: Non-negative, reasonable range        │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Vendor Name Normalization:                        │  │  │
+│  │  │  • Clean: Remove (Pty) Ltd, Inc, Corp, LLC         │  │  │
+│  │  │  • Standardize: Title case                         │  │  │
+│  │  │  • Deduplicate: Fuzzy matching (FuzzyWuzzy)        │  │  │
+│  │  │    "ACME Corp" = "Acme Corporation" = "acme corp"  │  │  │
+│  │  │  • Map to canonical vendor ID                      │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Invoice Number Normalization:                     │  │  │
+│  │  │  • Clean: Remove special chars                     │  │  │
+│  │  │  • Format: Uppercase                               │  │  │
+│  │  │  • Validate: Pattern consistency                   │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              STAGE 5: ENHANCED DATA PERSISTENCE                  │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              SQLite Database Schema (Enhanced)            │  │
+│  │                                                           │  │
+│  │  ┌─────────────────────┐    ┌──────────────────────┐    │  │
+│  │  │   INVOICES TABLE    │    │  LINE_ITEMS TABLE    │    │  │
+│  │  ├─────────────────────┤    ├──────────────────────┤    │  │
+│  │  │ • id (PK)           │    │ • id (PK)            │    │  │
+│  │  │ • invoice_number    │◀───│ • invoice_id (FK)    │    │  │
+│  │  │ • vendor_name       │    │ • description        │    │  │
+│  │  │ • vendor_id (FK)    │    │ • quantity           │    │  │
+│  │  │ • invoice_date      │    │ • unit_price         │    │  │
+│  │  │ • total_amount      │    │ • line_total         │    │  │
+│  │  │ • currency          │    │ • confidence_score   │    │  │
+│  │  │ • confidence_score  │    └──────────────────────┘    │  │
+│  │  │ • file_path         │                               │  │
+│  │  │ • source_pdf_name   │    ┌──────────────────────┐    │  │
+│  │  │ • created_at        │    │ VENDORS TABLE        │    │  │
+│  │  │ • updated_at        │    ├──────────────────────┤    │  │
+│  │  └─────────────────────┘    │ • id (PK)            │    │  │
+│  │                              │ • canonical_name     │    │  │
+│  │  ┌─────────────────────┐    │ • variations (JSON)  │    │  │
+│  │  │ EXTRACTION_METHODS  │    └──────────────────────┘    │  │
+│  │  ├─────────────────────┤                               │  │
+│  │  │ • invoice_id (FK)   │    ┌──────────────────────┐    │  │
+│  │  │ • method_used       │    │ VALIDATION_RESULTS   │    │  │
+│  │  │   (regex/llm/vision)│    ├──────────────────────┤    │  │
+│  │  │ • confidence        │    │ • invoice_id (FK)    │    │  │
+│  │  │ • processing_time   │    │ • rule_name          │    │  │
+│  │  │ • cost_estimate     │    │ • passed (boolean)   │    │  │
+│  │  │ • attempts_count    │    │ • error_message      │    │  │
+│  │  │ • fallback_used     │    │ • created_at         │    │  │
+│  │  └─────────────────────┘    └──────────────────────┘    │  │
+│  │                                                           │  │
+│  │  ┌─────────────────────┐    ┌──────────────────────┐    │  │
+│  │  │ OCR_METADATA        │    │ MANUAL_REVIEWS       │    │  │
+│  │  ├─────────────────────┤    ├──────────────────────┤    │  │
+│  │  │ • invoice_id (FK)   │    │ • invoice_id (FK)    │    │  │
+│  │  │ • ocr_engine        │    │ • reviewer_name      │    │  │
+│  │  │ • avg_confidence    │    │ • review_status      │    │  │
+│  │  │ • low_conf_regions  │    │ • corrections (JSON) │    │  │
+│  │  │ • processing_time   │    │ • reviewed_at        │    │  │
+│  │  │ • image_quality     │    └──────────────────────┘    │  │
+│  │  └─────────────────────┘                               │  │
+│  │                                                           │  │
+│  │  ┌─────────────────────────────────────────────────┐    │  │
+│  │  │ CONSENSUS_LOG (Multi-method tracking)           │    │  │
+│  │  ├─────────────────────────────────────────────────┤    │  │
+│  │  │ • invoice_id (FK)                               │    │  │
+│  │  │ • field_name                                    │    │  │
+│  │  │ • regex_value                                   │    │  │
+│  │  │ • llm_value                                     │    │  │
+│  │  │ • vision_value                                  │    │  │
+│  │  │ • consensus_value (chosen)                      │    │  │
+│  │  │ • agreement_level (0-1)                         │    │  │
+│  │  │ • resolution_method                             │    │  │
+│  │  └─────────────────────────────────────────────────┘    │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│         STAGE 6: ANALYTICS & MONITORING DASHBOARD                │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              Enhanced Streamlit Dashboard                 │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Tab 1: Extraction Results & Quality                │  │  │
+│  │  │  ┌──────────────────────────────────────────────┐  │  │  │
+│  │  │  │  • All 32 invoices table view               │  │  │  │
+│  │  │  │  • Color-coded by confidence level           │  │  │  │
+│  │  │  │  • Method used badge (Regex/LLM/Vision)      │  │  │  │
+│  │  │  │  • Filter: vendor, date, confidence, method  │  │  │  │
+│  │  │  │  • Quick view: extracted fields              │  │  │  │
+│  │  │  │  • Download: CSV/Excel export                │  │  │  │
+│  │  │  └──────────────────────────────────────────────┘  │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Tab 2: Method Performance Comparison               │  │  │
+│  │  │  ┌──────────────────────────────────────────────┐  │  │  │
+│  │  │  │  Accuracy by Method:                         │  │  │  │
+│  │  │  │  ┌────────────────────────────────────────┐  │  │  │  │
+│  │  │  │  │ Method     │ Invoices │ Accuracy │ Cost│  │  │  │  │
+│  │  │  │  ├────────────┼──────────┼──────────┼─────┤  │  │  │  │
+│  │  │  │  │ Regex      │   X      │  X%      │ $0  │  │  │  │  │
+│  │  │  │  │ LLM        │   Y      │  Y%      │ $Z  │  │  │  │  │
+│  │  │  │  │ Vision-LLM │   Z      │  Z%      │ $W  │  │  │  │  │
+│  │  │  │  │ Hybrid     │   32     │  92%+    │ $XX │  │  │  │  │
+│  │  │  │  └────────────────────────────────────────┘  │  │  │  │
+│  │  │  │                                              │  │  │  │
+│  │  │  │  Charts:                                     │  │  │  │
+│  │  │  │  • Method distribution (pie chart)           │  │  │  │
+│  │  │  │  • Accuracy comparison (bar chart)           │  │  │  │
+│  │  │  │  • Cost breakdown (stacked bar)              │  │  │  │
+│  │  │  │  • Confidence distribution (histogram)       │  │  │  │
+│  │  │  └──────────────────────────────────────────────┘  │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Tab 3: Field-Level Accuracy Metrics                │  │  │
+│  │  │  ┌──────────────────────────────────────────────┐  │  │  │
+│  │  │  │  Per-Field F1 Scores (against ground truth): │  │  │  │
+│  │  │  │  • Invoice Number: 95%                       │  │  │  │
+│  │  │  │  • Date: 91%                                 │  │  │  │
+│  │  │  │  • Vendor Name: 88%                          │  │  │  │
+│  │  │  │  • Total Amount: 94%                         │  │  │  │
+│  │  │  │  • Line Items: 85%                           │  │  │  │
+│  │  │  │                                              │  │  │  │
+│  │  │  │  Visualizations:                             │  │  │  │
+│  │  │  │  • Radar chart: Field accuracy comparison    │  │  │  │
+│  │  │  │  • Heatmap: Error types by field             │  │  │  │
+│  │  │  │  • Timeline: Accuracy improvement over time  │  │  │  │
+│  │  │  └──────────────────────────────────────────────┘  │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Tab 4: Consensus & Agreement Analysis              │  │  │
+│  │  │  ┌──────────────────────────────────────────────┐  │  │  │
+│  │  │  │  Multi-Method Agreement:                     │  │  │  │
+│  │  │  │  • Fields where all methods agreed: X%       │  │  │  │
+│  │  │  │  • Fields requiring consensus: Y%            │  │  │  │
+│  │  │  │  • Fields with conflicts: Z%                 │  │  │  │
+│  │  │  │                                              │  │  │  │
+│  │  │  │  Drill-down:                                 │  │  │  │
+│  │  │  │  • View specific disagreements               │  │  │  │
+│  │  │  │  • See which method was chosen & why         │  │  │  │
+│  │  │  │  • Identify systematic biases                │  │  │  │
+│  │  │  └──────────────────────────────────────────────┘  │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Tab 5: Business Analytics (Same as before)         │  │  │
+│  │  │  • Vendor spend analysis                            │  │  │
+│  │  │  • Monthly trends                                   │  │  │
+│  │  │  • Custom queries                                   │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Tab 6: Error Analysis & Manual Review Queue        │  │  │
+│  │  │  ┌──────────────────────────────────────────────┐  │  │  │
+│  │  │  │  Low Confidence Invoices (< 0.75):           │  │  │  │
+│  │  │  │  • List of flagged invoices                  │  │  │  │
+│  │  │  │  • Side-by-side: Original PDF vs Extracted   │  │  │  │
+│  │  │  │  • Manual correction interface               │  │  │  │
+│  │  │  │  • Track: reviewer, timestamp, changes made  │  │  │  │
+│  │  │  │                                              │  │  │  │
+│  │  │  │  Common Error Patterns:                      │  │  │  │
+│  │  │  │  • OCR misreads (O→0, I→1, S→5)              │  │  │  │
+│  │  │  │  • Date format variations                    │  │  │  │
+│  │  │  │  • Table parsing failures                    │  │  │  │
+│  │  │  │                                              │  │  │  │
+│  │  │  │  Learning Loop:                              │  │  │  │
+│  │  │  │  • Feed corrections back to system           │  │  │  │
+│  │  │  │  • Update few-shot examples                  │  │  │  │
+│  │  │  │  • Refine regex patterns                     │  │  │  │
+│  │  │  └──────────────────────────────────────────────┘  │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  │                                                           │  │
+│  │  ┌────────────────────────────────────────────────────┐  │  │
+│  │  │  Tab 7: Cost & Performance Monitoring               │  │  │
+│  │  │  ┌──────────────────────────────────────────────┐  │  │  │
+│  │  │  │  Cost Analysis:                              │  │  │  │
+│  │  │  │  • Total cost for 32 PDFs: $XX               │  │  │  │
+│  │  │  │  • Average cost per invoice: $X.XX           │  │  │  │
+│  │  │  │  • Cost by method breakdown                  │  │  │  │
+│  │  │  │  • Projected monthly cost at scale           │  │  │  │
+│  │  │  │                                              │  │  │  │
+│  │  │  │  Performance Metrics:                        │  │  │  │
+│  │  │  │  • Average processing time per invoice       │  │  │  │
+│  │  │  │  • Time by method comparison                 │  │  │  │
+│  │  │  │  • Throughput (invoices/hour)                │  │  │  │
+│  │  │  │  • API latency trends                        │  │  │  │
+│  │  │  └──────────────────────────────────────────────┘  │  │  │
+│  │  └────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
