@@ -1,0 +1,54 @@
+{
+  "pacific_food": {
+    "vendor_id": "pacific_food",
+    "vendor_name": "Pacific Food Importers",
+    "name_patterns": [
+      "pacific\\s+food\\s+importers?",
+      "pacific\\s+food"
+    ],
+    "invoice_prefix_patterns": [
+      "^37"
+    ],
+    "invoice_number_location": "top_right",
+    "invoice_number_label": "INVOICE",
+    "invoice_number_regex": "^37\\d{4}$",
+    "invoice_number_min_length": 6,
+    "invoice_number_max_length": 6,
+    "column_mappings": {
+      "quantity": "SHIPPED",
+      "unit_price": "Price",
+      "line_total": "Amount",
+      "description": "DESCRIPTION"
+    },
+    "confidence": 1.0,
+    "sample_count": 4,
+    "last_updated": "2025-11-24T01:39:27.583836",
+    "notes": "Invoices always start with 37 (370-379). Be careful not to confuse with ORDER NO."
+  },
+  "franks": {
+    "vendor_id": "franks",
+    "vendor_name": "Frank's Quality Produce",
+    "name_patterns": [
+      "frank'?s?\\s+quality\\s+produce",
+      "frank'?s?\\s+produce"
+    ],
+    "invoice_prefix_patterns": [
+      "^200"
+    ],
+    "invoice_number_location": "top_center",
+    "invoice_number_label": "Invoice #",
+    "invoice_number_regex": "^200\\d{5}$",
+    "invoice_number_min_length": 8,
+    "invoice_number_max_length": 8,
+    "column_mappings": {
+      "quantity": "Quantity",
+      "unit_price": "Price Each",
+      "line_total": "Amount",
+      "description": "Description"
+    },
+    "confidence": 1.0,
+    "sample_count": 2,
+    "last_updated": "2025-11-24T01:39:27.583883",
+    "notes": "Invoice numbers always start with 200 and are 8 digits total."
+  }
+}

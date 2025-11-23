@@ -1,0 +1,178 @@
+{
+    "_file": "Copy_of_ARPFIINVOEBTCHLASER__4_.pdf",
+    "_description": "Ground truth data manually extracted from PDF",
+    "_total_invoices": 4,
+    
+    "page_1": {
+      "invoice_number": "378093",
+      "vendor_name": "Pacific Food Importers",
+      "date": "2025-07-15",
+      "invoice_date": "2025-07-15",
+      "order_date": "2025-07-14",
+      "order_no": "444434",
+      "total_amount": 522.75,
+      "subtotal": 519.89,
+      "tax": 2.86,
+      "line_items": [
+        {
+          "product_id": "102950",
+          "description": "FLOUR POWER 50 LB GRAINCRAFT",
+          "ordered": 12.0,
+          "shipped": 12.0,
+          "quantity": 12.0,
+          "unit": "CS",
+          "unit_price": 24.063,
+          "line_total": 288.76
+        },
+        {
+          "product_id": "103800",
+          "description": "CORNMEAL YELLOW FINE 25 LB",
+          "ordered": 1.0,
+          "shipped": 1.0,
+          "quantity": 1.0,
+          "unit": "CS",
+          "unit_price": 25.101,
+          "line_total": 25.10
+        },
+        {
+          "product_id": "160908",
+          "description": "GLOVE NITRILE MEDIUM 10 x 100",
+          "ordered": 1.0,
+          "shipped": 1.0,
+          "quantity": 1.0,
+          "unit": "CS",
+          "unit_price": 29.783,
+          "line_total": 29.78
+        },
+        {
+          "product_id": "157301",
+          "description": "SESAME SEEDS WHITE+ 4 X 5 LB MARCA CROC",
+          "ordered": 1.0,
+          "shipped": 1.0,
+          "quantity": 1.0,
+          "unit": "CS",
+          "unit_price": 80.250,
+          "line_total": 80.25
+        },
+        {
+          "product_id": "156651",
+          "description": "POPPY SEED 4 X 5.5 LB MARCA CROC",
+          "ordered": 1.0,
+          "shipped": 1.0,
+          "quantity": 1.0,
+          "unit": "CS",
+          "unit_price": 96.000,
+          "line_total": 96.00
+        },
+        {
+          "product_id": "191928",
+          "description": "EGGS LIQUID 2 X 20 LB PAPETTIS",
+          "ordered": 2.0,
+          "shipped": 2.0,
+          "quantity": 2.0,
+          "unit": "CS",
+          "unit_price": 95.225,
+          "line_total": 190.45,
+          "note": "Price shown is per CS, but line total not shown in PDF - calculated"
+        }
+      ],
+      "line_items_count": 6
+    },
+    
+    "page_2": {
+      "invoice_number": "378094",
+      "vendor_name": "Pacific Food Importers",
+      "date": "2025-07-15",
+      "invoice_date": "2025-07-15",
+      "order_date": "2025-07-14",
+      "order_no": "444438",
+      "total_amount": 75.08,
+      "subtotal": 75.08,
+      "tax": 0.0,
+      "line_items": [
+        {
+          "product_id": "109609",
+          "description": "SALT KOSHER COARSE 9 X 3 LB DIAMOND CR",
+          "ordered": 1.0,
+          "shipped": 1.0,
+          "quantity": 1.0,
+          "unit": "CS",
+          "unit_price": 75.076,
+          "line_total": 75.08
+        }
+      ],
+      "line_items_count": 1
+    },
+    
+    "page_3": {
+      "invoice_number": "378206",
+      "vendor_name": "Pacific Food Importers",
+      "date": "2025-07-16",
+      "invoice_date": "2025-07-16",
+      "order_date": "2025-07-15",
+      "order_no": "444509",
+      "total_amount": 95.23,
+      "subtotal": 95.23,
+      "tax": 0.0,
+      "line_items": [
+        {
+          "product_id": "191928",
+          "description": "EGGS LIQUID 2 X 20 LB PAPETTIS",
+          "ordered": 2.0,
+          "shipped": 1.0,
+          "quantity": 1.0,
+          "unit": "CS",
+          "unit_price": 95.225,
+          "line_total": 95.23
+        }
+      ],
+      "line_items_count": 1
+    },
+    
+    "page_4": {
+      "invoice_number": "378262",
+      "vendor_name": "Pacific Food Importers",
+      "date": "2025-07-17",
+      "invoice_date": "2025-07-17",
+      "order_date": "2025-07-16",
+      "order_no": "444589",
+      "total_amount": 95.23,
+      "subtotal": 95.23,
+      "tax": 0.0,
+      "line_items": [
+        {
+          "product_id": "191928",
+          "description": "EGGS LIQUID 2 X 20 LB PAPETTIS",
+          "ordered": 1.0,
+          "shipped": 1.0,
+          "quantity": 1.0,
+          "unit": "CS",
+          "unit_price": 95.225,
+          "line_total": 95.23,
+          "note": "Product ID missing in PDF but same item as other pages"
+        }
+      ],
+      "line_items_count": 1
+    },
+    
+    "_summary": {
+      "total_invoices": 4,
+      "total_amount": 788.29,
+      "total_line_items": 9,
+      "date_range": {
+        "start": "2025-07-15",
+        "end": "2025-07-17"
+      },
+      "vendor": "Pacific Food Importers",
+      "invoice_numbers": ["378093", "378094", "378206", "378262"]
+    },
+    
+    "_notes": [
+      "All invoices are from Pacific Food Importers",
+      "Invoice numbers correctly start with 378",
+      "Page 1 has 6 line items (most complex)",
+      "Pages 2-4 have 1 line item each",
+      "Page 1 line 6 (EGGS LIQUID) - line total not displayed in PDF",
+      "Page 4 missing PRODUCT ID in table but item is 191928 (EGGS LIQUID)"
+    ]
+  }

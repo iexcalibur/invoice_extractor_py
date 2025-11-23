@@ -11,10 +11,9 @@ import argparse
 from pathlib import Path
 from typing import List
 
-from invoice_extractor import EnhancedInvoiceExtractor
-
-from config import Config
-from database import InvoiceDatabase
+from core.invoice_extractor import EnhancedInvoiceExtractor
+from core.config import Config
+from core.database import InvoiceDatabase
 
 
 def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceDatabase = None) -> dict:
@@ -32,12 +31,14 @@ def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceD
         )
         result = extractor.extract_robust(file_path)
         
-        os.makedirs(output_dir, exist_ok=True)
+        # Ensure output directory exists
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
         
         file_name = Path(file_path).stem
-        output_file = os.path.join(output_dir, f"{file_name}_extracted.json")
+        output_file = output_path / f"{file_name}_extracted.json"
         
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(str(output_file), 'w', encoding='utf-8') as f:
             json.dump(result, f, indent=2, ensure_ascii=False)
         
         print(f"\n✓ Results saved to: {output_file}")
@@ -161,8 +162,8 @@ Examples:
     
     parser.add_argument(
         '-o', '--output',
-        default='output',
-        help='Output directory for results (default: output)'
+        default='outputs',
+        help='Output directory for results (default: outputs)'
     )
     
     parser.add_argument(
@@ -233,4 +234,3 @@ Examples:
 
 if __name__ == "__main__":
     main()
-

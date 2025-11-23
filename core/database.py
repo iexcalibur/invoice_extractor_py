@@ -1,7 +1,3 @@
-"""
-Database module for storing invoice and line item data in SQLite
-"""
-
 import sqlite3
 import json
 from datetime import datetime
@@ -25,12 +21,26 @@ class InvoiceDatabase:
         self._create_tables()
     
     def _create_tables(self):
-        """Create database tables if they don't exist"""
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        """
+        Create database tables following dimensional model:
+        - invoices: DIMENSION TABLE (descriptive attributes)
+        - line_items: FACT TABLE (measures/metrics with foreign key to dimension)
+        """
+        # Close existing connection if any
+        if self.conn:
+            try:
+                self.conn.close()
+            except:
+                pass
+        
+        # Create new connection with timeout to handle locks
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10.0)
         self.conn.row_factory = sqlite3.Row
         
         cursor = self.conn.cursor()
         
+        # DIMENSION TABLE: Invoices
+        # Contains descriptive attributes about invoices
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS invoices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,6 +48,7 @@ class InvoiceDatabase:
                 vendor_name TEXT NOT NULL,
                 invoice_date DATE NOT NULL,
                 total_amount REAL NOT NULL,
+                -- Metadata fields (optional)
                 file_path TEXT,
                 source_pdf_name TEXT,
                 extraction_method TEXT,
@@ -49,6 +60,8 @@ class InvoiceDatabase:
             )
         """)
         
+        # FACT TABLE: Line Items
+        # Contains measures (quantity, unit_price, total) with foreign key to dimension
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS line_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,6 +77,7 @@ class InvoiceDatabase:
             )
         """)
         
+        # Indexes for dimension table (invoices)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_invoices_vendor 
             ON invoices(vendor_name)
@@ -75,8 +89,20 @@ class InvoiceDatabase:
         """)
         
         cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_invoices_number 
+            ON invoices(invoice_number)
+        """)
+        
+        # Indexes for fact table (line_items) - critical for joins
+        cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_line_items_invoice 
             ON line_items(invoice_id)
+        """)
+        
+        # Composite index for common fact table queries
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_line_items_invoice_order 
+            ON line_items(invoice_id, line_order)
         """)
         
         self.conn.commit()
@@ -247,27 +273,49 @@ class InvoiceDatabase:
     
     def save_invoice(self, invoice_data: Dict[str, Any], file_path: str = None) -> Optional[int]:
         """
-        Save invoice and line items to database
+        Save invoice to database (with duplicate check)
         
         Args:
-            invoice_data: Extracted invoice data dictionary
-            file_path: Source file path (optional)
+            invoice_data: Extracted invoice data
+            file_path: Source PDF filename (optional)
             
         Returns:
-            Invoice ID if successful, None otherwise
+            Invoice ID if saved, None if duplicate or error
         """
         if not self.conn:
             self._create_tables()
         
+        # Check for duplicate first
         invoice_number = invoice_data.get('invoice_number', '')
         vendor_name = invoice_data.get('vendor_name', '')
+        
+        if not invoice_number:
+            print(f"  ⚠ Skipping invoice: no invoice number")
+            return None
+        
+        normalized_invoice_number = self.normalize_invoice_number(invoice_number)
+        normalized_vendor = self.normalize_vendor_name(vendor_name)
+        
+        # Check if invoice already exists
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id FROM invoices WHERE invoice_number = ?",
+            (normalized_invoice_number,)
+        )
+        existing = cursor.fetchone()
+        
+        if existing:
+            existing_id = existing['id']
+            # Invoice already exists, skip
+            print(f"  ℹ Invoice {invoice_number} already exists")
+            return None
+        
+        # Proceed with insert...
         date_str = invoice_data.get('date', '')
         total_amount = invoice_data.get('total_amount', 0.0)
         extraction_method = invoice_data.get('extraction_method', 'unknown')
         validated = invoice_data.get('validated', False)
         
-        normalized_invoice_number = self.normalize_invoice_number(invoice_number)
-        normalized_vendor = self.normalize_vendor_name(vendor_name)
         normalized_date = self.normalize_date(date_str)
         normalized_total = self.normalize_amount(total_amount)
         
@@ -279,22 +327,12 @@ class InvoiceDatabase:
         if file_path:
             source_pdf_name = Path(file_path).name
         
-        cursor = self.conn.cursor()
-        
         try:
             cursor.execute("""
                 INSERT INTO invoices (
                     invoice_number, vendor_name, invoice_date, total_amount,
                     file_path, source_pdf_name, extraction_method, validated
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(invoice_number, vendor_name, invoice_date) 
-                DO UPDATE SET
-                    total_amount = excluded.total_amount,
-                    file_path = excluded.file_path,
-                    source_pdf_name = excluded.source_pdf_name,
-                    extraction_method = excluded.extraction_method,
-                    validated = excluded.validated,
-                    updated_at = CURRENT_TIMESTAMP
             """, (
                 normalized_invoice_number,
                 normalized_vendor,
@@ -307,16 +345,6 @@ class InvoiceDatabase:
             ))
             
             invoice_id = cursor.lastrowid
-            
-            if invoice_id == 0:
-                cursor.execute("""
-                    SELECT id FROM invoices 
-                    WHERE invoice_number = ? AND vendor_name = ? AND invoice_date = ?
-                """, (normalized_invoice_number, normalized_vendor, normalized_date))
-                row = cursor.fetchone()
-                if row:
-                    invoice_id = row['id']
-                    cursor.execute("DELETE FROM line_items WHERE invoice_id = ?", (invoice_id,))
             
             line_items = invoice_data.get('line_items', [])
             for order, item in enumerate(line_items, 1):
@@ -375,20 +403,92 @@ class InvoiceDatabase:
             if 'error' in page:
                 continue
             
+            # CRITICAL: Validate and fix vendor names and invoice numbers before saving
+            # Use vendor registry if available, otherwise skip hardcoded checks
+            vendor_name = page.get('vendor_name', '')
+            invoice_number = str(page.get('invoice_number', ''))
+            
+            # Try to use vendor registry for vendor detection and validation
+            try:
+                from .vendor_registry import get_vendor_registry
+                vendor_registry = get_vendor_registry()
+                
+                if vendor_registry and invoice_number:
+                    # Detect vendor from invoice number and vendor name
+                    vendor = vendor_registry.detect_vendor(
+                        vendor_name=vendor_name,
+                        invoice_number=invoice_number,
+                        debug=False
+                    )
+                    
+                    if vendor:
+                        # Fix vendor name to match registry standard
+                        if vendor_name.lower() != vendor.vendor_name.lower():
+                            print(f"  ⚠ Fixing vendor name: '{vendor_name}' -> '{vendor.vendor_name}'")
+                            page['vendor_name'] = vendor.vendor_name
+                        
+                        # Validate invoice number using vendor pattern
+                        is_valid, error_msg = vendor_registry.validate_invoice_number(
+                            invoice_number,
+                            vendor,
+                            debug=False
+                        )
+                        
+                        if not is_valid:
+                            errors.append(
+                                f"Page {page.get('page_number', 1)}: Invalid invoice number '{invoice_number}' "
+                                f"for {vendor.vendor_name} - {error_msg}"
+                            )
+                            continue
+            except (ImportError, Exception):
+                # Vendor registry not available - skip validation (allow all invoices)
+                pass
+            
             is_valid, validation_errors = self.validate_invoice(page)
             if not is_valid:
                 errors.extend(validation_errors)
                 continue
             
+            # Check for common issues before attempting save
+            invoice_number = page.get('invoice_number', '')
+            date_str = page.get('date', '')
+            page_num = page.get('page_number', 1)
+            
+            if not invoice_number:
+                errors.append(f"Page {page_num}: Cannot save - missing invoice number")
+                continue
+            
+            # Check if date can be normalized
+            normalized_date = self.normalize_date(date_str)
+            if not normalized_date:
+                errors.append(f"Page {page_num}: Cannot save - invalid date format '{date_str}' (Invoice: {invoice_number})")
+                continue
+            
+            # Check if invoice already exists
+            normalized_invoice_number = self.normalize_invoice_number(invoice_number)
+            if not self.conn:
+                self._create_tables()
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT id FROM invoices WHERE invoice_number = ?",
+                (normalized_invoice_number,)
+            )
+            existing = cursor.fetchone()
+            if existing:
+                errors.append(f"Page {page_num}: Invoice {invoice_number} already exists in database")
+                continue
+            
+            # Attempt to save
             invoice_id = self.save_invoice(page, file_path)
             if invoice_id:
                 saved_invoices.append({
                     'invoice_id': invoice_id,
-                    'invoice_number': page.get('invoice_number'),
-                    'page_number': page.get('page_number', 1)
+                    'invoice_number': invoice_number,
+                    'page_number': page_num
                 })
             else:
-                errors.append(f"Failed to save invoice from page {page.get('page_number', 1)}")
+                # If save_invoice returned None, provide detailed error
+                errors.append(f"Page {page_num}: Failed to save invoice {invoice_number} - database error occurred")
         
         return {
             'saved': len(saved_invoices) > 0,
@@ -472,6 +572,178 @@ class InvoiceDatabase:
             invoices.append(invoice)
         
         return invoices
+    
+    def update_invoice_number(self, invoice_id: int, new_invoice_number: str) -> bool:
+        """
+        Update invoice number for a specific invoice
+        
+        Args:
+            invoice_id: Invoice ID
+            new_invoice_number: New invoice number
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.conn:
+            self._create_tables()
+        
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE invoices 
+                SET invoice_number = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (new_invoice_number, invoice_id))
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            print(f"Error updating invoice number: {e}")
+            return False
+    
+    def get_invoices_by_vendor(self, vendor_name: str) -> List[Dict[str, Any]]:
+        """
+        Get all invoices for a specific vendor
+        
+        Args:
+            vendor_name: Vendor name (partial match)
+            
+        Returns:
+            List of invoice dictionaries
+        """
+        if not self.conn:
+            self._create_tables()
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT * FROM invoices 
+            WHERE vendor_name LIKE ?
+            ORDER BY created_at DESC
+        """, (f"%{vendor_name}%",))
+        
+        invoice_rows = cursor.fetchall()
+        invoices = []
+        for invoice_row in invoice_rows:
+            invoice = dict(invoice_row)
+            invoice_id = invoice['id']
+            
+            cursor.execute("""
+                SELECT * FROM line_items 
+                WHERE invoice_id = ? 
+                ORDER BY line_order
+            """, (invoice_id,))
+            line_item_rows = cursor.fetchall()
+            invoice['line_items'] = [dict(item) for item in line_item_rows]
+            
+            invoices.append(invoice)
+        
+        return invoices
+    
+    def get_fact_table_data(self, invoice_ids: List[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get fact table data (line_items) with dimension attributes joined
+        
+        This follows the dimensional model pattern where fact table is joined
+        with dimension table to get complete information.
+        
+        Args:
+            invoice_ids: Optional list of invoice IDs to filter by
+            
+        Returns:
+            List of dictionaries with fact and dimension data combined
+            Format: {line_item_id, invoice_id, description, quantity, unit_price, 
+                    line_total, invoice_number, vendor_name, invoice_date, total_amount}
+        """
+        if not self.conn:
+            self._create_tables()
+        
+        cursor = self.conn.cursor()
+        
+        if invoice_ids:
+            placeholders = ','.join(['?'] * len(invoice_ids))
+            query = f"""
+                SELECT 
+                    li.id as line_item_id,
+                    li.invoice_id,
+                    li.description,
+                    li.quantity,
+                    li.unit_price,
+                    li.line_total,
+                    li.line_order,
+                    i.id as invoice_dim_id,
+                    i.invoice_number,
+                    i.vendor_name,
+                    i.invoice_date,
+                    i.total_amount
+                FROM line_items li
+                JOIN invoices i ON li.invoice_id = i.id
+                WHERE li.invoice_id IN ({placeholders})
+                ORDER BY li.invoice_id, li.line_order
+            """
+            cursor.execute(query, invoice_ids)
+        else:
+            query = """
+                SELECT 
+                    li.id as line_item_id,
+                    li.invoice_id,
+                    li.description,
+                    li.quantity,
+                    li.unit_price,
+                    li.line_total,
+                    li.line_order,
+                    i.id as invoice_dim_id,
+                    i.invoice_number,
+                    i.vendor_name,
+                    i.invoice_date,
+                    i.total_amount
+                FROM line_items li
+                JOIN invoices i ON li.invoice_id = i.id
+                ORDER BY li.invoice_id, li.line_order
+            """
+            cursor.execute(query)
+        
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    
+    def get_dimension_table_data(self, vendor_name: str = None, start_date: str = None, 
+                                 end_date: str = None) -> List[Dict[str, Any]]:
+        """
+        Get dimension table data (invoices) with optional filters
+        
+        Args:
+            vendor_name: Optional vendor name filter
+            start_date: Optional start date filter (YYYY-MM-DD)
+            end_date: Optional end date filter (YYYY-MM-DD)
+            
+        Returns:
+            List of invoice dictionaries (dimension records)
+            Format: {id, invoice_number, vendor_name, invoice_date, total_amount, ...}
+        """
+        if not self.conn:
+            self._create_tables()
+        
+        cursor = self.conn.cursor()
+        
+        query = "SELECT * FROM invoices WHERE 1=1"
+        params = []
+        
+        if vendor_name:
+            query += " AND vendor_name LIKE ?"
+            params.append(f"%{vendor_name}%")
+        
+        if start_date:
+            query += " AND invoice_date >= ?"
+            params.append(start_date)
+        
+        if end_date:
+            query += " AND invoice_date <= ?"
+            params.append(end_date)
+        
+        query += " ORDER BY invoice_date DESC, id DESC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
     
     def close(self):
         """Close database connection"""

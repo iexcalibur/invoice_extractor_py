@@ -1,5 +1,6 @@
 import json
 import base64
+import re
 from io import BytesIO
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
@@ -25,13 +26,19 @@ except ImportError as e:
     print("Please install requirements: pip install -r requirements.txt")
     raise
 
-# Optional imports for OCR and LayoutLMv3
 try:
     import pytesseract
     TESSERACT_AVAILABLE = True
 except ImportError:
     TESSERACT_AVAILABLE = False
     print("Warning: Tesseract not available")
+
+try:
+    from .enhanced_ocr import extract_text_with_enhanced_ocr
+    ENHANCED_OCR_AVAILABLE = True
+except ImportError:
+    ENHANCED_OCR_AVAILABLE = False
+    # Not critical - can fall back to regular OCR
 
 try:
     import easyocr
@@ -46,32 +53,109 @@ try:
 except ImportError:
     LAYOUTLMV3_AVAILABLE = False
 
-# Cost optimization: Use cheaper model for text parsing
 TEXT_PARSING_MODEL = "claude-3-haiku-20240307"
 
 try:
-    from config import Config
+    from .config import Config
 except ImportError:
     Config = None
 
-# Import regex extractor - try improved version first, then fallback
+try:
+    from .vendor_registry import get_vendor_registry
+    VENDOR_REGISTRY_AVAILABLE = True
+except ImportError:
+    VENDOR_REGISTRY_AVAILABLE = False
+    print("Warning: vendor_registry module not available")
+
 REGEX_EXTRACTOR_AVAILABLE = False
 regex_extractor_module = None
 
 try:
-    from regex_extractor_improved import RegexInvoiceExtractor
+    from .regex_extractor import RegexInvoiceExtractor
     REGEX_EXTRACTOR_AVAILABLE = True
-    regex_extractor_module = "regex_extractor_improved"
-    print("✓ Using improved regex extractor (regex_extractor_improved.py)")
+    regex_extractor_module = "regex_extractor"
+    print("✓ Using regex extractor")
 except ImportError:
+    print("Warning: No regex_extractor module found. Regex extraction will be disabled.")
+    print("  To enable regex extraction, ensure regex_extractor.py is in the same directory.")
+
+
+def _parse_claude_json_response(response_text: str, debug: bool = False) -> Optional[Dict[str, Any]]:
+    """
+    Robustly parse JSON from Claude API response
+    
+    Handles:
+    - Markdown code fences (```json ... ```)
+    - Text before/after JSON
+    - Multiple code blocks
+    - Incomplete JSON
+    - Various edge cases
+    
+    Args:
+        response_text: Raw text response from Claude
+        debug: If True, print debugging information
+        
+    Returns:
+        Parsed JSON dict or None if parsing fails
+    """
+    if not response_text or not response_text.strip():
+        if debug:
+            print(f"  [DEBUG] Empty response text")
+        return None
+    
+    # Step 1: Remove markdown code fences
+    text = response_text.strip()
+    
+    # Remove ```json at start
+    text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
+    # Remove ``` at start (any language)
+    text = re.sub(r'^```\w*\s*', '', text)
+    # Remove ``` at end
+    text = re.sub(r'\s*```$', '', text)
+    text = text.strip()
+    
+    # Step 2: Try to find JSON object in the text
+    # Look for first { and last } to extract JSON
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+    
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        json_text = text[first_brace:last_brace + 1]
+    else:
+        # No braces found, try the whole text
+        json_text = text
+    
+    # Step 3: Try to parse JSON
     try:
-        from regex_extractor import RegexInvoiceExtractor
-        REGEX_EXTRACTOR_AVAILABLE = True
-        regex_extractor_module = "regex_extractor"
-        print("✓ Using standard regex extractor (regex_extractor.py)")
-    except ImportError:
-        print("Warning: No regex_extractor module found. Regex extraction will be disabled.")
-        print("  To enable regex extraction, ensure regex_extractor_improved.py is in the same directory.")
+        result = json.loads(json_text)
+        if debug:
+            print(f"  [DEBUG] Successfully parsed JSON ({len(json_text)} chars)")
+        return result
+    except json.JSONDecodeError as e:
+        if debug:
+            print(f"  [DEBUG] JSON parse error: {e}")
+            print(f"  [DEBUG] Attempted to parse: {json_text[:200]}...")
+            print(f"  [DEBUG] Full response (first 500 chars): {response_text[:500]}")
+        
+        # Try to fix common issues
+        # Remove any text before first {
+        if '{' in json_text:
+            json_text = json_text[json_text.index('{'):]
+        
+        # Remove any text after last }
+        if '}' in json_text:
+            json_text = json_text[:json_text.rindex('}') + 1]
+        
+        # Try again
+        try:
+            result = json.loads(json_text)
+            if debug:
+                print(f"  [DEBUG] Successfully parsed after cleanup")
+            return result
+        except json.JSONDecodeError:
+            if debug:
+                print(f"  [DEBUG] Still failed after cleanup")
+            return None
 
 
 class EnhancedInvoiceExtractor:
@@ -85,7 +169,8 @@ class EnhancedInvoiceExtractor:
         use_layoutlmv3: bool = True,
         use_ocr: bool = True,
         ocr_engine: str = "tesseract",
-        regex_confidence_threshold: float = 0.70,
+        use_enhanced_ocr: bool = True,  # Use enhanced OCR preprocessing if available
+        regex_confidence_threshold: float = 0.60,
         layoutlmv3_confidence_threshold: float = 0.50
     ):
         """
@@ -98,7 +183,8 @@ class EnhancedInvoiceExtractor:
             use_layoutlmv3: Whether to use LayoutLMv3 model (cheaper option)
             use_ocr: Whether to use OCR as fallback
             ocr_engine: OCR engine to use ("tesseract" or "easyocr")
-            regex_confidence_threshold: Minimum confidence for regex extraction (default: 0.70)
+            use_enhanced_ocr: Use enhanced OCR preprocessing if available (default: True)
+            regex_confidence_threshold: Minimum confidence for regex extraction (default: 0.60)
             layoutlmv3_confidence_threshold: Minimum confidence for LayoutLMv3 (default: 0.50)
         """
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
@@ -107,10 +193,20 @@ class EnhancedInvoiceExtractor:
         self.use_layoutlmv3 = use_layoutlmv3 and LAYOUTLMV3_AVAILABLE
         self.use_ocr = use_ocr and (TESSERACT_AVAILABLE or EASYOCR_AVAILABLE)
         self.ocr_engine = ocr_engine
+        self.use_enhanced_ocr = use_enhanced_ocr and ENHANCED_OCR_AVAILABLE
         self.regex_confidence_threshold = regex_confidence_threshold
         self.layoutlmv3_confidence_threshold = layoutlmv3_confidence_threshold
         
-        # Initialize regex extractor
+        # Initialize vendor registry
+        if VENDOR_REGISTRY_AVAILABLE:
+            try:
+                self.vendor_registry = get_vendor_registry()
+            except Exception as e:
+                print(f"Warning: Could not initialize vendor registry: {e}")
+                self.vendor_registry = None
+        else:
+            self.vendor_registry = None
+        
         if self.use_regex:
             try:
                 self.regex_extractor = RegexInvoiceExtractor()
@@ -123,7 +219,6 @@ class EnhancedInvoiceExtractor:
         else:
             self.regex_extractor = None
         
-        # Initialize Claude client
         if self.api_key:
             try:
                 self.claude_client = anthropic.Anthropic(api_key=self.api_key)
@@ -134,7 +229,6 @@ class EnhancedInvoiceExtractor:
             self.claude_client = None
             print("Warning: No Anthropic API key provided. Claude-based extraction will be disabled.")
         
-        # Initialize LayoutLMv3 model
         self.layoutlmv3_processor = None
         self.layoutlmv3_model = None
         self.layoutlmv3_tokenizer = None
@@ -158,7 +252,6 @@ class EnhancedInvoiceExtractor:
                 print(f"Warning: Could not load LayoutLMv3 model: {e}")
                 self.use_layoutlmv3 = False
         
-        # Initialize OCR
         if self.use_ocr:
             if self.ocr_engine == "easyocr" and EASYOCR_AVAILABLE:
                 try:
@@ -245,8 +338,11 @@ class EnhancedInvoiceExtractor:
             return None
         
         try:
-            # Extract text using OCR (needed for regex)
-            if TESSERACT_AVAILABLE:
+            # Use enhanced OCR if available and enabled, otherwise fall back to standard OCR
+            if self.use_enhanced_ocr and TESSERACT_AVAILABLE:
+                debug_ocr = os.getenv("DEBUG_REGEX", "").lower() == "true"
+                ocr_text = extract_text_with_enhanced_ocr(image, debug=debug_ocr)
+            elif TESSERACT_AVAILABLE:
                 ocr_text = pytesseract.image_to_string(image)
             elif EASYOCR_AVAILABLE:
                 results = self.easyocr_reader.readtext(np.array(image))
@@ -259,7 +355,6 @@ class EnhancedInvoiceExtractor:
                     print(f"  [DEBUG] OCR text too short: {len(ocr_text.strip())} chars")
                 return None
             
-            # Try regex extraction
             debug_regex = os.getenv("DEBUG_REGEX", "").lower() == "true"
             result = self.regex_extractor.extract(ocr_text, debug=debug_regex)
             
@@ -299,7 +394,6 @@ class EnhancedInvoiceExtractor:
         if not ocr_data or "text" not in ocr_data:
             return layout_info
         
-        # Extract word positions and bounding boxes
         words = []
         for i in range(len(ocr_data.get("text", []))):
             text = ocr_data["text"][i].strip()
@@ -315,7 +409,6 @@ class EnhancedInvoiceExtractor:
         
         layout_info["word_positions"] = words
         
-        # Identify table regions
         if words:
             rows = {}
             for word in words:
@@ -360,13 +453,11 @@ class EnhancedInvoiceExtractor:
         """Calculate confidence score for extracted data"""
         confidence = 0.0
         
-        # Check required fields (40%)
         required_fields = ["invoice_number", "date", "vendor_name", "total_amount"]
         field_score = sum(1 for field in required_fields 
                          if extracted_data.get(field) and extracted_data[field] != "")
         confidence += (field_score / len(required_fields)) * 0.4
         
-        # Check line items (40%)
         line_items = extracted_data.get("line_items", [])
         if line_items:
             valid_items = sum(1 for item in line_items
@@ -374,13 +465,11 @@ class EnhancedInvoiceExtractor:
             if valid_items > 0:
                 confidence += (valid_items / len(line_items)) * 0.3
         
-        # Check layout quality (10%)
         if layout_info.get("tables"):
             confidence += 0.2
         else:
             confidence += 0.1
         
-        # Check total_amount validity (10%)
         total = extracted_data.get("total_amount", 0)
         if total and total > 0:
             confidence += 0.1
@@ -393,7 +482,6 @@ class EnhancedInvoiceExtractor:
             return None
         
         try:
-            # Extract text and layout using OCR
             if TESSERACT_AVAILABLE:
                 ocr_text = pytesseract.image_to_string(image)
                 ocr_data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
@@ -404,10 +492,8 @@ class EnhancedInvoiceExtractor:
             if not ocr_text or len(ocr_text.strip()) < 50:
                 return None
             
-            # Extract layout structure
             layout_info = self._extract_layout_structure(ocr_data, image)
             
-            # Process with LayoutLMv3
             encoding = self.layoutlmv3_processor(
                 image, 
                 ocr_text, 
@@ -417,16 +503,31 @@ class EnhancedInvoiceExtractor:
                 max_length=1024
             )
             
+            # Validate encoding before processing
+            if not encoding or 'input_ids' not in encoding:
+                print(f"  ⚠ LayoutLMv3: Invalid encoding, skipping")
+                return None
+            
+            # Check tensor shapes to prevent index errors
+            input_ids = encoding.get('input_ids')
+            if input_ids is not None and len(input_ids.shape) > 0:
+                if input_ids.shape[0] == 0 or input_ids.shape[1] == 0:
+                    print(f"  ⚠ LayoutLMv3: Empty input tensors, skipping")
+                    return None
+            
             if torch.cuda.is_available():
-                encoding = {k: v.to("cuda") for k, v in encoding.items()}
+                encoding = {k: v.to("cuda") if isinstance(v, torch.Tensor) else v for k, v in encoding.items()}
             
             with torch.no_grad():
-                outputs = self.layoutlmv3_model(**encoding)
+                try:
+                    outputs = self.layoutlmv3_model(**encoding)
+                except (IndexError, RuntimeError) as e:
+                    print(f"  ⚠ LayoutLMv3 model error: {e}")
+                    print(f"  ⚠ Falling back to OCR extraction")
+                    return None
             
-            # Use Claude for parsing if available
             if self.claude_client and ocr_text:
                 try:
-                    # Enhance text with layout hints
                     layout_enhanced_text = ocr_text
                     if layout_info.get("tables"):
                         table_hints = "\n\n[LAYOUT INFO: Document has structured tables]\n"
@@ -449,13 +550,13 @@ class EnhancedInvoiceExtractor:
                     )
                     
                     response_text = response.content[0].text.strip()
-                    if response_text.startswith("```"):
-                        response_text = response_text.split("```")[1]
-                        if response_text.startswith("json"):
-                            response_text = response_text[4:]
-                        response_text = response_text.strip()
                     
-                    extracted_data = json.loads(response_text)
+                    # Use robust JSON parser
+                    extracted_data = _parse_claude_json_response(response_text, debug=True)
+                    
+                    if not extracted_data:
+                        print(f"  ⚠ LayoutLMv3 + Claude: Failed to parse JSON response")
+                        return None
                     
                     # Calculate confidence
                     confidence = self._calculate_confidence(extracted_data, layout_info)
@@ -469,8 +570,14 @@ class EnhancedInvoiceExtractor:
                         print(f"  ⚠ LayoutLMv3 low confidence ({confidence:.2%}), trying fallback")
                         return None
                         
+                except json.JSONDecodeError as e:
+                    print(f"  LayoutLMv3 + Claude JSON parsing error: {e}")
+                    print(f"  Raw response (first 300 chars): {response.content[0].text[:300]}")
+                    return None
                 except Exception as e:
                     print(f"  LayoutLMv3 + Claude parsing error: {e}")
+                    import traceback
+                    traceback.print_exc()
                     return None
             
             return None
@@ -481,27 +588,78 @@ class EnhancedInvoiceExtractor:
     
     def _get_vendor_instructions(self, ocr_text: str) -> str:
         """Get vendor-specific extraction instructions"""
+        # Try vendor registry first (preferred method)
+        if self.vendor_registry:
+            vendor = self.vendor_registry.detect_vendor(
+                ocr_text=ocr_text[:2000],
+                debug=False
+            )
+            
+            if vendor:
+                instructions = self.vendor_registry.get_extraction_instructions(vendor)
+                print(f"  ℹ️  Using vendor instructions from registry: {vendor.vendor_name}")
+                return instructions
+        
+        # Fallback to hardcoded instructions
         ocr_lower = ocr_text.lower()
         
         if "frank" in ocr_lower and "quality produce" in ocr_lower:
             return """
 VENDOR: FRANK'S QUALITY PRODUCE
+- Invoice Number: Must ALWAYS start with "200" (e.g., "Invoice #20065629", "Invoice #20012345")
+- DO NOT use numbers that don't start with 200 - those are not invoice numbers
 - Quantity: First column in line items table
 - Unit Price: "Price Each" column
 - Line Total: "Amount" column
 - Total: Bottom right corner (e.g., "Total $109.26")
-CRITICAL: Use exact "Price Each" values, NOT calculated. Extract total from bottom right."""
+CRITICAL: 
+1. Invoice number MUST start with "200" - reject any other numbers
+2. Use exact "Price Each" values, NOT calculated. Extract total from bottom right."""
         
         elif "pacific food" in ocr_lower and "importers" in ocr_lower:
             return """
 VENDOR: PACIFIC FOOD IMPORTERS
+- Vendor Name: MUST be "Pacific Food Importers" (this is the company issuing the invoice)
+- CRITICAL: DO NOT use "Sold To:" or "Ship To:" customer names (like "Westmans Bagel & Caffe") as vendor
+- The vendor is always "Pacific Food Importers" - it appears in the header/company name
+- Invoice Number: Located at TOP RIGHT CORNER of invoice, labeled "INVOICE" followed by 6-digit number
+- CRITICAL: Invoice numbers start with "37" (e.g., "INVOICE 370123", "INVOICE 378093", "INVOICE 379549")
+- DO NOT use numbers starting with other digits (like 444509, 444434) - those are ORDER NO values
+- DO NOT confuse with "ORDER NO" - ORDER NO is different and appears in a table below
 - Quantity: "SHIPPED" column (3rd column) - extract EXACT values
 - Unit Price: "Price" column - extract exact decimals
 - Line Total: "Amount" column
 - Total: Bottom section (e.g., "INVOICE TOTAL $596.94")
-CRITICAL: Use SHIPPED column for quantity, NOT Ordered. Extract exact values."""
+CRITICAL: 
+1. vendor_name MUST be exactly "Pacific Food Importers" - NOT the customer name
+2. Invoice number MUST start with "37" - reject any other numbers
+3. Invoice number is at TOP RIGHT - look for "INVOICE" followed by 6 digits starting with 37
+4. Use SHIPPED column for quantity, NOT Ordered. Extract exact values."""
         
         return ""
+    
+    def _get_vendor_instructions_fallback(self) -> str:
+        """Fallback hardcoded vendor instructions for Claude Vision"""
+        return """
+For Frank's Quality Produce:
+- Invoice Number: MUST start with "200" (e.g., "Invoice #20065629", "Invoice #20012345")
+- DO NOT use numbers that don't start with 200
+- Use "Price Each" column for unit_price
+- Use FIRST column for quantity
+- Extract total from bottom right corner
+
+For Pacific Food Importers:
+- Vendor Name: MUST be exactly "Pacific Food Importers" (the company issuing the invoice)
+- CRITICAL: DO NOT use customer names from "Sold To:" or "Ship To:" sections (like "Westmans Bagel & Caffe") as vendor
+- The vendor is the company name in the header - always "Pacific Food Importers"
+- Invoice Number: Look at TOP RIGHT CORNER for "INVOICE" followed by 6-digit number
+- CRITICAL: Invoice number MUST start with "37" (e.g., "INVOICE 370123", "INVOICE 378093", "INVOICE 379549")
+- DO NOT use "ORDER NO" as invoice number - ORDER NO is different and appears in a table (numbers like 444509, 444434 are ORDER NO, not invoice numbers)
+- If you find a number that doesn't start with 37, it's NOT the invoice number
+- Use "SHIPPED" column for quantity (exact values)
+- Use "Price" column for unit_price
+- Extract total from bottom
+"""
     
     def _build_extraction_prompt(self, ocr_text: str, vendor_instructions: str) -> str:
         """Build extraction prompt with vendor-specific instructions"""
@@ -520,11 +678,19 @@ Extract ALL line items with:
 
 Extract invoice fields:
 - invoice_number: Invoice number
+  * For Pacific Food Importers: look at TOP RIGHT corner for "INVOICE" followed by 6-digit number starting with "37", NOT "ORDER NO"
+  * For Frank's Quality Produce: invoice number MUST start with "200" (e.g., "Invoice #20065629", "Invoice #20012345")
 - date: YYYY-MM-DD format
-- vendor_name: Vendor name
+- vendor_name: Vendor name (the company issuing the invoice)
+  * For Pacific Food Importers: MUST be exactly "Pacific Food Importers" - NOT the customer name from "Sold To:" or "Ship To:"
+  * DO NOT use customer names like "Westmans Bagel & Caffe" as vendor - that's the customer, not the vendor
 - total_amount: Total amount (float, from bottom of invoice)
 
 CRITICAL: 
+- For Pacific Food Importers: Invoice number MUST start with "37" (e.g., "INVOICE 370123", "INVOICE 378093", "INVOICE 379549")
+  Invoice number is at TOP RIGHT corner labeled "INVOICE". DO NOT use "ORDER NO" values (like 444509, 444434).
+- For Frank's Quality Produce: Invoice number MUST start with "200" (e.g., "Invoice #20065629", "Invoice #20012345")
+  If you find a number that doesn't start with 200, it's NOT the invoice number for Frank's Quality Produce.
 - Extract total_amount from invoice bottom, NOT by summing line items
 - For quantities, use exact column values (no calculations)
 - For unit_price, use exact "Price Each" or "Price" column values
@@ -578,18 +744,25 @@ Return ONLY valid JSON:
                     )
                     
                     response_text = response.content[0].text.strip()
-                    if response_text.startswith("```"):
-                        response_text = response_text.split("```")[1]
-                        if response_text.startswith("json"):
-                            response_text = response_text[4:]
-                        response_text = response_text.strip()
                     
-                    extracted_data = json.loads(response_text)
+                    # Use robust JSON parser
+                    extracted_data = _parse_claude_json_response(response_text, debug=True)
+                    
+                    if not extracted_data:
+                        print(f"  ⚠ OCR + Claude: Failed to parse JSON response")
+                        return None
+                    
                     extracted_data["_method"] = "ocr"
                     return extracted_data
                     
+                except json.JSONDecodeError as e:
+                    print(f"  OCR + Claude JSON parsing error: {e}")
+                    print(f"  Raw response (first 300 chars): {response.content[0].text[:300]}")
+                    return None
                 except Exception as e:
                     print(f"  OCR + Claude parsing error: {e}")
+                    import traceback
+                    traceback.print_exc()
                     return None
             else:
                 return self._parse_ocr_text_basic(ocr_text)
@@ -621,7 +794,36 @@ Return ONLY valid JSON:
             processed_image.save(buffered, format="PNG")
             img_base64 = base64.b64encode(buffered.getvalue()).decode()
             
-            # Use Haiku for all Claude API calls (cheaper option)
+            # Get vendor-specific instructions (try vendor registry first)
+            vendor_instructions = ""
+            if self.vendor_registry:
+                # Extract OCR text for vendor detection
+                try:
+                    if TESSERACT_AVAILABLE:
+                        ocr_text = pytesseract.image_to_string(image)
+                    elif EASYOCR_AVAILABLE:
+                        results = self.easyocr_reader.readtext(np.array(image))
+                        ocr_text = "\n".join([result[1] for result in results])
+                    else:
+                        ocr_text = ""
+                    
+                    if ocr_text:
+                        vendor = self.vendor_registry.detect_vendor(
+                            ocr_text=ocr_text[:2000],
+                            debug=False
+                        )
+                        
+                        if vendor:
+                            vendor_instructions = self.vendor_registry.get_extraction_instructions(vendor)
+                            print(f"  ℹ️  Using vendor instructions from registry: {vendor.vendor_name}")
+                except Exception as e:
+                    # If vendor detection fails, fall back to hardcoded instructions
+                    pass
+            
+            # Fallback to hardcoded instructions if vendor registry didn't provide any
+            if not vendor_instructions:
+                vendor_instructions = self._get_vendor_instructions_fallback()
+            
             claude_model = TEXT_PARSING_MODEL if TEXT_PARSING_MODEL else "claude-3-haiku-20240307"
             response = self.claude_client.messages.create(
                 model=claude_model,
@@ -639,17 +841,9 @@ Return ONLY valid JSON:
                         },
                         {
                             "type": "text",
-                            "text": """Extract invoice data from this image.
+                            "text": f"""Extract invoice data from this image.
 
-For Frank's Quality Produce:
-- Use "Price Each" column for unit_price
-- Use FIRST column for quantity
-- Extract total from bottom right corner
-
-For Pacific Food Importers:
-- Use "SHIPPED" column for quantity (exact values)
-- Use "Price" column for unit_price
-- Extract total from bottom
+{vendor_instructions}
 
 Return ONLY valid JSON:
 {
@@ -672,30 +866,60 @@ Return ONLY valid JSON:
             )
             
             response_text = response.content[0].text.strip()
-            if response_text.startswith("```"):
-                response_text = response_text.split("```")[1]
-                if response_text.startswith("json"):
-                    response_text = response_text[4:]
-                response_text = response_text.strip()
             
-            extracted_data = json.loads(response_text)
+            # Use robust JSON parser
+            extracted_data = _parse_claude_json_response(response_text, debug=True)
+            
+            if not extracted_data:
+                print(f"  ⚠ Claude Vision: Failed to parse JSON response")
+                print(f"  Raw response (first 500 chars): {response_text[:500]}")
+                return None
+            
             extracted_data["_method"] = "claude_vision"
             return extracted_data
             
+        except json.JSONDecodeError as e:
+            print(f"  Claude Vision JSON parsing error: {e}")
+            print(f"  Raw response (first 500 chars): {response.content[0].text[:500]}")
+            return None
         except Exception as e:
             print(f"  Claude Vision extraction error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
-    def validate_extraction(self, result: Dict[str, Any], strict: bool = False) -> bool:
+    def validate_extraction(self, result: Dict[str, Any], strict: bool = False, debug: bool = False) -> bool:
         """Validate that extracted data has required fields"""
         required_fields = ['invoice_number', 'date', 'vendor_name', 'total_amount']
         
+        # Use vendor registry for validation if available
+        vendor_name = result.get('vendor_name', '')
+        invoice_number = result.get('invoice_number', '')
+        
+        if self.vendor_registry and vendor_name and invoice_number:
+            # Detect vendor using registry
+            vendor = self.vendor_registry.detect_vendor(
+                vendor_name=vendor_name,
+                invoice_number=str(invoice_number),
+                debug=debug
+            )
+            
+            if vendor:
+                # Validate invoice number using vendor pattern
+                is_valid, error_msg = self.vendor_registry.validate_invoice_number(
+                    str(invoice_number),
+                    vendor,
+                    debug=debug
+                )
+                if not is_valid:
+                    if debug:
+                        print(f"  [DEBUG] Validation failed: {vendor.vendor_name} invoice number '{invoice_number}' - {error_msg}")
+                    return False
+        
         if not strict:
-            # Count fields present
             fields_present = sum(1 for field in required_fields 
                                if field in result and result[field] is not None and result[field] != "")
             
-            # Accept if we have at least 3 out of 4
             if fields_present >= 3:
                 for field in required_fields:
                     if field in result and result[field] is not None:
@@ -713,7 +937,6 @@ Return ONLY valid JSON:
                                     return False
                 return True
         
-        # Strict validation
         for field in required_fields:
             if field not in result or result[field] is None:
                 return False
@@ -756,51 +979,114 @@ Return ONLY valid JSON:
                 page_result = None
                 method_used = None
                 
-                # Strategy 0: Try Regex FIRST (fastest, free, known vendors)
                 if self.use_regex:
                     print("  [1/4] Trying regex extraction (fastest, free)...")
                     page_result = self.extract_with_regex(image)
-                    if page_result and self.validate_extraction(page_result, strict=False):
-                        method_used = "regex"
-                    else:
-                        page_result = None
+                    if page_result:
+                        if self.validate_extraction(page_result, strict=False, debug=True):
+                            method_used = "regex"
+                        else:
+                            if page_result:
+                                print(f"  [DEBUG] Regex extraction failed validation. Extracted: vendor='{page_result.get('vendor_name')}', invoice='{page_result.get('invoice_number')}', date='{page_result.get('date')}', total={page_result.get('total_amount')}")
+                            page_result = None
                 
-                # Strategy 1: Try LayoutLMv3
                 if not page_result:
                     if self.use_layoutlmv3:
                         print("  [2/4] Trying LayoutLMv3 extraction (with layout understanding)...")
                         page_result = self.extract_with_layoutlmv3(image)
-                        if page_result and self.validate_extraction(page_result, strict=False):
-                            method_used = "layoutlmv3"
-                        else:
-                            page_result = None
+                        if page_result:
+                            if self.validate_extraction(page_result, strict=False, debug=True):
+                                method_used = "layoutlmv3"
+                            else:
+                                if page_result:
+                                    print(f"  [DEBUG] LayoutLMv3 extraction failed validation. Extracted: vendor='{page_result.get('vendor_name')}', invoice='{page_result.get('invoice_number')}', date='{page_result.get('date')}', total={page_result.get('total_amount')}")
+                                page_result = None
                 
-                # Strategy 2: Try OCR + Claude
                 if not page_result:
                     if self.use_ocr:
                         print("  [3/4] Trying OCR extraction (with cheap Claude Haiku)...")
                         page_result = self.extract_with_ocr(image)
-                        if page_result and self.validate_extraction(page_result, strict=False):
-                            method_used = "ocr"
-                        else:
-                            page_result = None
+                        if page_result:
+                            if self.validate_extraction(page_result, strict=False, debug=True):
+                                method_used = "ocr"
+                            else:
+                                if page_result:
+                                    print(f"  [DEBUG] OCR extraction failed validation. Extracted: vendor='{page_result.get('vendor_name')}', invoice='{page_result.get('invoice_number')}', date='{page_result.get('date')}', total={page_result.get('total_amount')}")
+                                page_result = None
                 
-                # Strategy 3: Try Claude Vision (expensive fallback)
                 if not page_result:
                     if self.claude_client:
                         print("  [4/4] Trying Claude Vision (expensive fallback)...")
                         page_result = self.extract_with_claude(image)
-                        if page_result and self.validate_extraction(page_result, strict=True):
-                            method_used = "claude_vision"
-                        else:
-                            page_result = None
+                        if page_result:
+                            if self.validate_extraction(page_result, strict=True, debug=True):
+                                method_used = "claude_vision"
+                            else:
+                                if page_result:
+                                    print(f"  [DEBUG] Claude Vision extraction failed validation. Extracted: vendor='{page_result.get('vendor_name')}', invoice='{page_result.get('invoice_number')}', date='{page_result.get('date')}', total={page_result.get('total_amount')}")
+                                page_result = None
                 
-                # Add page metadata
                 if page_result:
+                    # Post-process: Validate and fix vendor name and invoice numbers using vendor registry
+                    vendor_name = page_result.get('vendor_name', '')
+                    invoice_number = page_result.get('invoice_number', '')
+                    
+                    # Use vendor registry to detect and fix vendor information
+                    if self.vendor_registry:
+                        # Detect vendor from extracted data
+                        vendor = self.vendor_registry.detect_vendor(
+                            vendor_name=vendor_name,
+                            invoice_number=str(invoice_number) if invoice_number else "",
+                            debug=False
+                        )
+                        
+                        if vendor:
+                            # Fix vendor name to match registry standard
+                            if vendor_name.lower() != vendor.vendor_name.lower():
+                                print(f"  ⚠ Warning: Incorrect vendor name '{vendor_name}' - correcting to '{vendor.vendor_name}'")
+                                page_result['vendor_name'] = vendor.vendor_name
+                            
+                            # Validate and optionally fix invoice number
+                            is_valid, error_msg = self.vendor_registry.validate_invoice_number(
+                                str(invoice_number) if invoice_number else "",
+                                vendor,
+                                debug=False
+                            )
+                            
+                            if not is_valid and invoice_number:
+                                # Try to find correct invoice number from OCR text
+                                print(f"  ⚠ Warning: Invoice number '{invoice_number}' doesn't match {vendor.vendor_name} pattern")
+                                print(f"     Attempting to find correct invoice number...")
+                                
+                                if TESSERACT_AVAILABLE:
+                                    try:
+                                        ocr_text = pytesseract.image_to_string(image)
+                                        # Use vendor's invoice number regex to find correct number
+                                        pattern = vendor.invoice_number_regex.replace('^', '').replace('$', '')
+                                        correct_inv_match = re.search(
+                                            rf'{vendor.invoice_number_label}\s*:?\s*({pattern})',
+                                            ocr_text[:2000],
+                                            re.IGNORECASE
+                                        )
+                                        if correct_inv_match:
+                                            page_result['invoice_number'] = correct_inv_match.group(1)
+                                            print(f"     ✓ Found correct invoice number: {page_result['invoice_number']}")
+                                    except Exception:
+                                        pass  # Ignore OCR errors, use extracted invoice number as-is
+                    # Note: Removed hardcoded fallback - vendor registry is preferred method
+                    # If vendor registry is not available, extracted data is used as-is
+                    
+                    # Ensure confidence score is set (calculate if missing)
+                    if '_confidence' not in page_result or page_result.get('_confidence') is None:
+                        # Calculate confidence for methods that don't provide it (OCR, Claude Vision)
+                        # Use empty layout_info since we don't have OCR data at this point
+                        layout_info = {}
+                        page_result['_confidence'] = self._calculate_confidence(page_result, layout_info)
+                    
                     page_result['page_number'] = page_num + 1
                     page_result['extraction_method'] = method_used
                     extracted_data.append(page_result)
-                    print(f"  ✓ Extraction successful using {method_used}")
+                    print(f"  ✓ Extraction successful using {method_used} (confidence: {page_result.get('_confidence', 0):.2%})")
                 else:
                     extracted_data.append({
                         "page_number": page_num + 1,
@@ -809,7 +1095,6 @@ Return ONLY valid JSON:
                     })
                     print(f"  ✗ All extraction methods failed for page {page_num + 1}")
             
-            # Validate overall results
             has_valid = any(
                 page.get('extraction_method') and page.get('extraction_method') != 'none'
                 for page in extracted_data
