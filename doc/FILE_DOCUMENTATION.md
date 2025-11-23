@@ -1,9 +1,5 @@
 # 📚 Invoice Extraction System - File Documentation
 
-> **Comprehensive guide to every file in the project**  
-> **Author:** ML Engineer  
-> **Last Updated:** November 2024
-
 ---
 
 ## 📋 Table of Contents
