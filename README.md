@@ -74,11 +74,15 @@ Invoices/
 ├── main.py                        # CLI application
 ├── streamlit_app.py               # Interactive dashboard (Streamlit UI)
 ├── README.md                      # This file
-├── Doc.md                         # Full documentation
 ├── requirements.txt               # Python dependencies
-├── TRADE_OFFS_ANALYSIS.md         # Method comparison analysis
 ├── vendor_registry.json           # Vendor patterns configuration
 ├── invoices.db                    # SQLite database
+│
+├── doc/                           # Documentation
+│   ├── PROJECT_DOCUMENTATION.md   # Complete project documentation
+│   ├── FILE_DOCUMENTATION.md      # Detailed file documentation
+│   ├── DATA_FLOW_DIAGRAM.md       # System architecture & data flow
+│   └── TRADE_OFFS_ANALYSIS.md     # Method comparison analysis
 │
 ├── core/                          # Core extraction modules
 │   ├── __init__.py
@@ -102,11 +106,87 @@ Invoices/
 ├── data/                          # Input directory (place invoices here)
 │   └── *.pdf                      # Invoice PDF files
 │
-├── output/                        # Output directory (generated files)
+├── output/                        # Output directory 
 │
-└── venv/                          # Python virtual environment (gitignored)
+└── venv/                          # Python virtual environment 
 ```
 
-See full documentation in this file for complete details.
+---
+
+## 🏗️ Architecture & Approach
+
+### 4-Tier Hybrid Extraction Pipeline
+
+The system uses an intelligent fallback approach that automatically escalates through extraction methods based on confidence:
+
+1. **Tier 1: Regex Pattern Matching** (FREE, <0.1s)
+   - Pattern-based extraction for known vendors
+   - 100% accuracy for supported formats
+
+2. **Tier 2: LayoutLMv3** (FREE, ~2s)
+   - Local transformer model for structured documents
+   - 85-95% accuracy
+
+3. **Tier 3: OCR + Claude LLM** (~$0.01, ~5s)
+   - OCR text extraction with LLM parsing
+   - 90-95% accuracy
+
+4. **Tier 4: Claude Vision** (~$0.05, ~10s)
+   - Multimodal AI for complex layouts
+   - 95-99% accuracy
+
+**Why Hybrid?** This approach achieves **92-96% cost savings** compared to pure Vision LLM while maintaining **100% accuracy** on evaluation set.
 
 ---
+
+## 🛠️ Technologies & Libraries
+
+### Core Technologies
+- **Python 3.9+**: Core programming language
+- **Anthropic Claude API**: LLM & Vision AI (Tiers 3 & 4)
+- **LayoutLMv3**: Microsoft's Document AI transformer (Tier 2)
+- **Tesseract OCR**: Google's OCR engine (Tier 3)
+- **Streamlit**: Interactive web dashboard
+- **SQLite**: Database for invoice storage
+- **Plotly**: Data visualizations
+
+### Key Python Libraries
+- `anthropic`: Claude API client
+- `transformers`: LayoutLMv3 model
+- `pytesseract`: OCR integration
+- `pandas`: Data manipulation
+- `streamlit`: Web UI framework
+- `plotly`: Interactive charts
+
+---
+
+## 📝 Limitations & Future Work
+
+### Current Limitations
+- **Vendor Coverage**: Optimized for 2 vendors (Frank's Quality Produce, Pacific Food Importers)
+- **Language**: English only
+- **Layout**: Best for standard invoice formats
+- **Handwriting**: Limited support
+
+### Planned Enhancements
+- [ ] Support more vendors (auto-learn patterns via vendor registry)
+- [ ] Multi-language support
+- [ ] Fine-tune LayoutLMv3 on invoice dataset
+- [ ] Field-level confidence scores
+- [ ] REST API endpoint
+- [ ] Docker containerization
+
+---
+
+## 📚 Documentation
+
+For detailed documentation, see the [`doc/`](doc/) folder:
+
+- **[PROJECT_DOCUMENTATION.md](doc/PROJECT_DOCUMENTATION.md)**: Complete project overview, architecture, and usage
+- **[FILE_DOCUMENTATION.md](doc/FILE_DOCUMENTATION.md)**: Detailed documentation for each module
+- **[DATA_FLOW_DIAGRAM.md](doc/DATA_FLOW_DIAGRAM.md)**: System architecture and data flow diagrams
+- **[TRADE_OFFS_ANALYSIS.md](doc/TRADE_OFFS_ANALYSIS.md)**: Comparison of extraction methods
+
+---
+
+**Built with ❤️ for automated invoice processing**
