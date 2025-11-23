@@ -110,5 +110,3 @@ Invoices/
 See full documentation in this file for complete details.
 
 ---
-
-**Built with ❤️ for automated invoice processing**
