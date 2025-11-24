@@ -1,16 +1,3 @@
-"""
-Invoice Extraction & Analytics Dashboard
-Built with Streamlit
-
-Features:
-- Upload and process invoices
-- Real-time extraction viewing
-- Database query and filtering
-- Data visualizations
-- Export functionality
-- Evaluation metrics
-"""
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -22,14 +9,12 @@ from datetime import datetime, timedelta
 import tempfile
 import os
 
-# Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core.invoice_extractor import EnhancedInvoiceExtractor
 from core.database import InvoiceDatabase
 from core.config import Config
 
-# Page config
 st.set_page_config(
     page_title="Invoice Extraction Dashboard",
     page_icon="📄",
@@ -37,7 +22,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -119,7 +103,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# Initialize session state
 if 'db' not in st.session_state:
     st.session_state.db = None
 if 'invoices_df' not in st.session_state:
@@ -135,7 +118,6 @@ if 'file_uploader_key' not in st.session_state:
 
 
 def init_database():
-    """Initialize database connection"""
     try:
         if st.session_state.db is None:
             st.session_state.db = InvoiceDatabase("invoices.db")
@@ -146,7 +128,6 @@ def init_database():
 
 
 def load_invoices_data():
-    """Load all invoices from database"""
     db = init_database()
     if not db:
         return pd.DataFrame()
@@ -156,10 +137,8 @@ def load_invoices_data():
         if not invoices:
             return pd.DataFrame()
         
-        # Convert to DataFrame
         df = pd.DataFrame(invoices)
         
-        # Parse dates
         if 'invoice_date' in df.columns:
             df['invoice_date'] = pd.to_datetime(df['invoice_date'])
         
@@ -173,14 +152,11 @@ def load_invoices_data():
 
 
 def extract_invoice(uploaded_file):
-    """Extract invoice from uploaded file"""
     try:
-        # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
             tmp_path = tmp_file.name
         
-        # Initialize extractor
         with st.spinner("🔄 Extracting invoice data..."):
             extractor = EnhancedInvoiceExtractor(
                 api_key=Config.ANTHROPIC_API_KEY if Config.ANTHROPIC_API_KEY else None,
@@ -191,29 +167,23 @@ def extract_invoice(uploaded_file):
             
             result = extractor.extract_robust(tmp_path)
         
-        # Store file path in result for manual review
         result['pdf'] = tmp_path
         result['original_filename'] = uploaded_file.name
-        result['file_content'] = uploaded_file.getvalue()  # Store file content for download
+        result['file_content'] = uploaded_file.getvalue()
         
-        # Only delete temp file if extraction was successful
         if result.get('status') == 'success':
             os.unlink(tmp_path)
         else:
-            # Keep temp file for manual review - will be cleaned up later or moved
             pass
         
-        # Save to database if successful or has valid pages
         db = init_database()
         if db:
-            # Check if we have valid pages to save
             valid_pages = [
                 page for page in result.get('pages', [])
                 if page.get('extraction_method') and page.get('extraction_method') != 'none'
             ]
             
             if valid_pages:
-                # Create a success result with only valid pages
                 save_result = {
                     'status': 'success',
                     'pages': valid_pages,
@@ -221,11 +191,11 @@ def extract_invoice(uploaded_file):
                 }
                 db_result = db.save_extraction_result(save_result, uploaded_file.name)
                 if db_result.get('saved'):
-                    st.session_state.invoices_df = load_invoices_data()  # Refresh data
+                    st.session_state.invoices_df = load_invoices_data()
                     st.success(f"💾 Saved {db_result.get('saved_pages', 0)} invoice(s) to database")
                 elif db_result.get('errors'):
                     st.warning(f"⚠️ Saved with warnings: {', '.join(db_result['errors'])}")
-                    st.session_state.invoices_df = load_invoices_data()  # Refresh data anyway
+                    st.session_state.invoices_df = load_invoices_data()
         
         return result
     
@@ -235,7 +205,6 @@ def extract_invoice(uploaded_file):
 
 
 def display_extraction_result(result):
-    """Display extraction result in a nice format"""
     if not result:
         return
     
@@ -244,7 +213,6 @@ def display_extraction_result(result):
     if status == 'success':
         st.markdown('<div class="success-box">✅ <strong>Extraction Successful!</strong></div>', unsafe_allow_html=True)
         
-        # Display each page
         for page in result.get('pages', []):
             if page.get('validated'):
                 st.subheader(f"📄 Page {page.get('page_number', '?')}")
@@ -263,11 +231,9 @@ def display_extraction_result(result):
                 with col4:
                     st.metric("Line Items", len(page.get('line_items', [])))
                 
-                # Display vendor
                 st.write(f"**Vendor:** {page.get('vendor_name', 'N/A')}")
                 st.write(f"**Extraction Method:** `{page.get('extraction_method', 'unknown')}`")
                 
-                # Display line items
                 if page.get('line_items'):
                     st.write("**Line Items:**")
                     line_items_df = pd.DataFrame(page['line_items'])
@@ -278,7 +244,6 @@ def display_extraction_result(result):
     elif status == 'manual_review_needed':
         st.markdown('<div class="warning-box">⚠️ <strong>Manual Review Needed</strong><br>Extraction completed but validation failed.</div>', unsafe_allow_html=True)
         
-        # Show file information and action buttons
         pdf_path = result.get('pdf', '')
         original_filename = result.get('original_filename', '')
         file_content = result.get('file_content')
@@ -287,7 +252,6 @@ def display_extraction_result(result):
             st.divider()
             st.subheader("📋 Manual Review Actions")
             
-            # Determine file name
             if original_filename:
                 file_name = original_filename
             elif pdf_path:
@@ -300,9 +264,7 @@ def display_extraction_result(result):
             col1, col2 = st.columns(2)
             
             with col1:
-                # Download button
                 if file_content:
-                    # Use stored file content (for uploaded files)
                     st.download_button(
                         label="📥 Download PDF",
                         data=file_content,
@@ -311,7 +273,6 @@ def display_extraction_result(result):
                         use_container_width=True
                     )
                 elif pdf_path and os.path.exists(pdf_path):
-                    # Use file path (for files from data folder)
                     with open(pdf_path, 'rb') as f:
                         st.download_button(
                             label="📥 Download PDF",
@@ -324,14 +285,12 @@ def display_extraction_result(result):
                     st.info("⚠️ File not available for download")
             
             with col2:
-                # Move to Manual Review folder button
                 if st.button("📁 Move to Manual Review Folder", use_container_width=True, type="secondary"):
                     manual_review_folder = Path("Manual review")
                     manual_review_folder.mkdir(exist_ok=True)
                     
                     try:
                         dest_path = manual_review_folder / file_name
-                        # Handle duplicate names
                         counter = 1
                         while dest_path.exists():
                             stem = Path(file_name).stem
@@ -339,14 +298,11 @@ def display_extraction_result(result):
                             dest_path = manual_review_folder / f"{stem}_{counter}{suffix}"
                             counter += 1
                         
-                        # Copy file to manual review folder
                         import shutil
                         if file_content:
-                            # Write from stored content
                             with open(dest_path, 'wb') as f:
                                 f.write(file_content)
                         elif pdf_path and os.path.exists(pdf_path):
-                            # Copy from file path
                             shutil.copy2(pdf_path, dest_path)
                         else:
                             st.error("❌ Source file not found")
@@ -354,15 +310,12 @@ def display_extraction_result(result):
                         
                         st.success(f"✅ File moved to: {dest_path}")
                         
-                        # Also save extraction result JSON for reference
                         json_path = dest_path.with_suffix('.json')
-                        # Remove file_content (bytes) before JSON serialization
                         result_for_json = {k: v for k, v in result.items() if k != 'file_content'}
                         with open(json_path, 'w') as f:
                             json.dump(result_for_json, f, indent=2)
                         st.info(f"📄 Extraction result saved as: {json_path.name}")
                         
-                        # Clean up temp file if it exists
                         if pdf_path and os.path.exists(pdf_path) and pdf_path.startswith(tempfile.gettempdir()):
                             try:
                                 os.unlink(pdf_path)
@@ -371,9 +324,7 @@ def display_extraction_result(result):
                     except Exception as e:
                         st.error(f"❌ Error moving file: {e}")
             
-            # Show extraction details for debugging
             with st.expander("🔍 View Extraction Details", expanded=False):
-                # Remove file_content from display (too large)
                 display_result = {k: v for k, v in result.items() if k != 'file_content'}
                 st.json(display_result)
     
@@ -382,14 +333,12 @@ def display_extraction_result(result):
 
 
 def extract_from_data_folder():
-    """Extract all PDFs and images from data folder"""
     data_folder = Path("data")
     
     if not data_folder.exists():
         st.error("❌ Data folder not found!")
         return []
     
-    # Find all PDF and image files
     supported_extensions = ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.gif']
     all_files = []
     
@@ -407,10 +356,8 @@ def extract_from_data_folder():
 
 
 def show_upload_tab():
-    """Upload and process invoices tab"""
     st.header("📤 Upload & Extract Invoices")
     
-    # Extract from data folder section
     st.subheader("📁 Extract from Data Folder")
     col1, col2 = st.columns([3, 1])
     
@@ -434,9 +381,6 @@ def show_upload_tab():
                     status_text.text(f"Processing {i+1}/{len(files)}: {file_path.name}")
                     
                     try:
-                        # Create a file-like object for the extract_invoice function
-                        # Since extract_invoice expects an uploaded file, we'll use the file path directly
-                        # We need to modify the approach - use the extractor directly
                         extractor = EnhancedInvoiceExtractor(
                             api_key=Config.ANTHROPIC_API_KEY if Config.ANTHROPIC_API_KEY else None,
                             use_regex=True,
@@ -449,7 +393,6 @@ def show_upload_tab():
                         if result:
                             results.append(result)
                             
-                            # Save to database if successful
                             valid_pages = [
                                 page for page in result.get('pages', [])
                                 if page.get('extraction_method') and page.get('extraction_method') != 'none'
@@ -478,10 +421,8 @@ def show_upload_tab():
                 status_text.text(f"✅ Processing complete! {success_count} invoice(s) saved, {error_count} error(s)")
                 progress_bar.empty()
                 
-                # Refresh database view
                 st.session_state.invoices_df = load_invoices_data()
                 
-                # Store last result for display
                 if results:
                     st.session_state.extraction_result = results[-1]
                     st.success(f"📊 Processed {len(results)} file(s). {success_count} invoice(s) saved to database.")
@@ -490,7 +431,6 @@ def show_upload_tab():
     
     st.divider()
     
-    # File upload section with clear button
     col_upload, col_clear = st.columns([4, 1])
     
     with col_upload:
@@ -503,14 +443,13 @@ def show_upload_tab():
         )
     
     with col_clear:
-        st.write("")  # Spacing
-        st.write("")  # Spacing
+        st.write("")
+        st.write("")
         if st.button("🗑️ Clear List", use_container_width=True, type="secondary"):
             st.session_state.file_uploader_key += 1
             st.rerun()
     
     if uploaded_files:
-        # Filter out duplicate files based on filename
         unique_files = []
         duplicate_files = []
         seen_names = set()
@@ -522,14 +461,12 @@ def show_upload_tab():
             else:
                 duplicate_files.append(file.name)
         
-        # Show warning if duplicates were detected
         if duplicate_files:
             if len(duplicate_files) == 1:
                 st.warning("⚠️ This file is already selected. Please select a different file.")
             else:
                 st.warning(f"⚠️ {len(duplicate_files)} file(s) are already selected. Please select different files.")
         
-        # Update uploaded files to only unique ones
         uploaded_files = unique_files
         
         if len(uploaded_files) == 1:
@@ -555,7 +492,6 @@ def show_upload_tab():
                 status_text.text(f"✅ Processed {len(results)} file(s) successfully!")
                 progress_bar.empty()
                 
-                # Store last result for display
                 if results:
                     st.session_state.extraction_result = results[-1]
                     if len(results) > 1:
@@ -566,14 +502,11 @@ def show_upload_tab():
                 st.session_state.extraction_result = None
                 st.rerun()
     
-    # Display result if exists
     if st.session_state.extraction_result:
         st.divider()
         display_extraction_result(st.session_state.extraction_result)
         
-        # Download JSON
         if st.session_state.extraction_result.get('status') == 'success':
-            # Remove file_content (bytes) before JSON serialization
             result_for_json = {k: v for k, v in st.session_state.extraction_result.items() if k != 'file_content'}
             json_str = json.dumps(result_for_json, indent=2)
             st.download_button(
@@ -585,14 +518,12 @@ def show_upload_tab():
 
 
 def show_database_tab():
-    """Database viewer and query tab"""
-    # Header with empty database button on same line
     col_header, col_button = st.columns([4, 1])
     with col_header:
         st.header("🗄️ Database Browser")
     with col_button:
-        st.write("")  # Spacing
-        st.write("")  # Spacing
+        st.write("")
+        st.write("")
         if st.button("🗑️ Empty Database", type="secondary", use_container_width=True):
             db = init_database()
             if db:
@@ -602,21 +533,19 @@ def show_database_tab():
                     cursor.execute("DELETE FROM invoices")
                     db.conn.commit()
                     st.success("✅ Database emptied successfully!")
-                    st.session_state.invoices_df = load_invoices_data()  # Refresh data
+                    st.session_state.invoices_df = load_invoices_data()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error emptying database: {e}")
     
     st.divider()
     
-    # Load data
     df = load_invoices_data()
     
     if df.empty:
         st.info("📊 No invoices in database yet. Upload some invoices to get started!")
         return
     
-    # Stats
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -639,18 +568,15 @@ def show_database_tab():
     
     st.divider()
     
-    # Filters
     st.subheader("🔍 Filters")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        # Vendor filter
         vendors = ['All'] + sorted(df['vendor_name'].unique().tolist())
         selected_vendor = st.selectbox("Vendor", vendors)
     
     with col2:
-        # Date range filter
         if 'invoice_date' in df.columns:
             min_date = df['invoice_date'].min().date()
             max_date = df['invoice_date'].max().date()
@@ -662,11 +588,9 @@ def show_database_tab():
             )
     
     with col3:
-        # Extraction method filter
         methods = ['All'] + sorted(df['extraction_method'].unique().tolist())
         selected_method = st.selectbox("Extraction Method", methods)
     
-    # Apply filters
     filtered_df = df.copy()
     
     if selected_vendor != 'All':
@@ -681,10 +605,8 @@ def show_database_tab():
     if selected_method != 'All':
         filtered_df = filtered_df[filtered_df['extraction_method'] == selected_method]
     
-    # Display filtered data
     st.subheader(f"📋 Invoices ({len(filtered_df)} results)")
     
-    # Format display
     display_df = filtered_df[[
         'invoice_number', 'vendor_name', 'invoice_date', 
         'total_amount', 'extraction_method', 'source_pdf_name'
@@ -698,13 +620,10 @@ def show_database_tab():
         hide_index=True
     )
     
-    # Line Items Details Section
     st.divider()
     st.subheader("📦 Line Items Details")
     
-    # Create a selectbox to choose which invoice's line items to view
     if len(filtered_df) > 0:
-        # Create display options
         invoice_options = []
         for idx, row in filtered_df.iterrows():
             invoice_num = row.get('invoice_number', 'N/A')
@@ -725,10 +644,8 @@ def show_database_tab():
         if selected_invoice_idx is not None and selected_invoice_idx < len(filtered_df):
             selected_invoice = filtered_df.iloc[selected_invoice_idx]
             
-            # Get the full invoice data with line items
             db = init_database()
             if db:
-                # Find invoice by invoice_number
                 invoice_number = selected_invoice.get('invoice_number')
                 all_invoices = db.get_all_invoices()
                 
@@ -739,10 +656,8 @@ def show_database_tab():
                         if line_items:
                             st.write(f"**Invoice #{invoice_number}** - {len(line_items)} line item(s)")
                             
-                            # Create DataFrame for line items
                             line_items_df = pd.DataFrame(line_items)
                             
-                            # Format columns for display
                             if 'quantity' in line_items_df.columns:
                                 line_items_df['quantity'] = line_items_df['quantity'].apply(lambda x: f"{x:,.2f}" if pd.notna(x) else "N/A")
                             if 'unit_price' in line_items_df.columns:
@@ -750,7 +665,6 @@ def show_database_tab():
                             if 'line_total' in line_items_df.columns:
                                 line_items_df['line_total'] = line_items_df['line_total'].apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "N/A")
                             
-                            # Select columns to display
                             display_cols = ['description', 'quantity', 'unit_price', 'line_total']
                             if 'line_order' in line_items_df.columns:
                                 display_cols.insert(0, 'line_order')
@@ -764,7 +678,6 @@ def show_database_tab():
                                 hide_index=True
                             )
                             
-                            # Summary - calculate from original data before formatting
                             line_items_original = pd.DataFrame(line_items)
                             if 'line_total' in line_items_original.columns:
                                 total_line_items = line_items_original['line_total'].sum()
@@ -775,7 +688,6 @@ def show_database_tab():
     else:
         st.info("No invoices to display line items for.")
     
-    # Export options
     st.divider()
     st.subheader("📥 Export Data")
     
@@ -803,7 +715,6 @@ def show_database_tab():
 
 
 def show_analytics_tab():
-    """Analytics and visualizations tab"""
     st.header("📊 Analytics & Insights")
     
     df = load_invoices_data()
@@ -812,7 +723,6 @@ def show_analytics_tab():
         st.info("📊 No data to visualize yet. Upload some invoices first!")
         return
     
-    # Time series
     st.subheader("📈 Invoices Over Time")
     
     if 'invoice_date' in df.columns:
@@ -837,7 +747,6 @@ def show_analytics_tab():
         
         st.plotly_chart(fig, use_container_width=True)
     
-    # Vendor analysis
     col1, col2 = st.columns(2)
     
     with col1:
@@ -868,7 +777,6 @@ def show_analytics_tab():
         
         st.plotly_chart(fig, use_container_width=True)
     
-    # Statistics
     st.divider()
     st.subheader("📊 Summary Statistics")
     
@@ -888,7 +796,6 @@ def show_analytics_tab():
 
 
 def show_evaluation_tab():
-    """Evaluation and metrics tab"""
     st.header("✅ Evaluation & Metrics")
     
     st.markdown("""
@@ -901,7 +808,6 @@ def show_evaluation_tab():
         st.info("📊 No data to evaluate yet.")
         return
     
-    # Method performance
     st.subheader("🔧 Extraction Method Performance")
     
     method_stats = df.groupby('extraction_method').agg({
@@ -913,11 +819,9 @@ def show_evaluation_tab():
     
     st.dataframe(method_stats, use_container_width=True)
     
-    # Cost analysis
     st.divider()
     st.subheader("💰 Cost Optimization Analysis")
     
-    # Estimate costs
     costs = {
         'regex': 0,
         'layoutlmv3': 0,
@@ -931,7 +835,6 @@ def show_evaluation_tab():
         cost = costs.get(method, 0)
         total_cost += count * cost
     
-    # Calculate savings
     pure_vision_cost = len(df) * 0.05
     savings = pure_vision_cost - total_cost
     savings_pct = (savings / pure_vision_cost * 100) if pure_vision_cost > 0 else 0
@@ -947,7 +850,6 @@ def show_evaluation_tab():
     with col3:
         st.metric("Savings", f"${savings:.2f} ({savings_pct:.1f}%)")
     
-    # Success rate
     st.divider()
     st.subheader("📈 Accuracy Metrics")
     
@@ -963,14 +865,12 @@ def show_evaluation_tab():
 
 
 def show_about_tab():
-    """About and documentation tab"""
     st.header("ℹ️ About")
     
     st.markdown("""
     ## Invoice Extraction System
     
     **Version:** 1.0.0  
-    **Author:** ML Engineer  
     **Tech Stack:** Python, Streamlit, Claude AI, LayoutLMv3, Tesseract OCR
     
     ### 🚀 Features
@@ -1011,12 +911,9 @@ def show_about_tab():
 
 
 def main():
-    """Main app"""
-    # Header
     st.markdown('<p class="main-header">📄 Invoice Extraction Dashboard</p>', unsafe_allow_html=True)
     st.markdown("Hybrid AI system for automated invoice data extraction")
     
-    # Top tab navigation
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📤 Upload", 
         "🗄️ Database", 
@@ -1025,7 +922,6 @@ def main():
         "ℹ️ About"
     ])
     
-    # Show selected page based on active tab
     with tab1:
         show_upload_tab()
     

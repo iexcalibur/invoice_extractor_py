@@ -1,8 +1,3 @@
-"""
-SOLUTION 2: Post-OCR Text Correction (SMART FIX)
-Automatically fix common OCR errors before regex extraction
-"""
-
 import re
 from typing import Dict, List, Tuple
 
@@ -20,63 +15,48 @@ class OCRTextCorrector:
     
     def __init__(self):
         """Initialize correction patterns"""
-        
-        # Common OCR misreads in invoices (wrong -> correct)
+
         self.word_corrections = {
-            # INVOICE variations
             "INVOKE": "INVOICE",
             "lNVOlCE": "INVOICE",
-            "INV0ICE": "INVOICE",  # 0 instead of O
-            "INVOlCE": "INVOICE",  # l instead of I
+            "INV0ICE": "INVOICE",  
+            "INVOlCE": "INVOICE",  
             
-            # TOTAL variations
-            "T0TAL": "TOTAL",  # 0 instead of O
-            "TOTAl": "TOTAL",  # l instead of L
-            "TOTAI": "TOTAL",  # I instead of L
+            "T0TAL": "TOTAL",  
+            "TOTAl": "TOTAL",  
+            "TOTAI": "TOTAL",  
             
-            # DATE variations
-            "0ATE": "DATE",  # 0 instead of D
-            "OATE": "DATE",  # O instead of D
+            "0ATE": "DATE",  
+            "OATE": "DATE",  
             
-            # NUMBER variations
-            "NUMßER": "NUMBER",  # ß instead of B
-            "NUMB3R": "NUMBER",  # 3 instead of E
+            "NUMßER": "NUMBER",  
+            "NUMB3R": "NUMBER",  
             
-            # CUSTOMER variations
-            "CUST0MER": "CUSTOMER",  # 0 instead of O
-            "CUSTOMEß": "CUSTOMER",  # ß instead of R
+            "CUST0MER": "CUSTOMER",  
+            "CUSTOMEß": "CUSTOMER",  
             
-            # ORDER variations
-            "0RDER": "ORDER",  # 0 instead of O
-            "OROER": "ORDER",  # O instead of D
+            "0RDER": "ORDER",  
+            "OROER": "ORDER",  
             
-            # SHIPPED variations
-            "SHlPPED": "SHIPPED",  # l instead of I
-            "SHIPP3D": "SHIPPED",  # 3 instead of E
+            "SHlPPED": "SHIPPED",  
+            "SHIPP3D": "SHIPPED",  
         }
         
-        # Character-level corrections (common character confusions)
         self.char_corrections = {
-            # In invoice numbers
             r'\b([A-Z]+)([Ol])(\d{5,})\b': lambda m: f"{m.group(1)}{m.group(2).replace('O', '0').replace('l', '1')}{m.group(3)}",
             
-            # In amounts (l instead of 1, O instead of 0)
             r'\$\s*([Ol\d,]+\.\d{2})': self._fix_amount,
         }
         
-        # Context-aware corrections
         self.context_corrections = [
-            # INVOICE should be followed by number or DATE
             (r'\bINVOKE\s+(?:TOTAL|DATE|#|NO|\d)', "INVOICE"),
             
-            # TOTAL should be preceded by INVOICE, SUB, or GRAND
             (r'(?:INVOICE|SUB|GRAND)\s+T0TAL', lambda m: m.group(0).replace('T0TAL', 'TOTAL')),
         ]
     
     def _fix_amount(self, match) -> str:
         """Fix common OCR errors in dollar amounts"""
         amount_str = match.group(1)
-        # Replace l with 1, O with 0 in amounts
         fixed = amount_str.replace('l', '1').replace('O', '0')
         return f"$ {fixed}"
     
@@ -94,31 +74,26 @@ class OCRTextCorrector:
         original_text = text
         corrections_made = []
         
-        # 1. Word-level corrections
         for wrong, correct in self.word_corrections.items():
             if wrong in text:
                 text = text.replace(wrong, correct)
                 corrections_made.append(f"{wrong} → {correct}")
         
-        # 2. Context-aware corrections (using regex)
         for pattern, replacement in self.context_corrections:
             if callable(replacement):
-                # Function-based replacement
                 matches = list(re.finditer(pattern, text))
-                for match in reversed(matches):  # Replace from end to avoid offset issues
+                for match in reversed(matches):  
                     old_text = match.group(0)
                     new_text = replacement(match)
                     text = text[:match.start()] + new_text + text[match.end():]
                     if old_text != new_text:
                         corrections_made.append(f"{old_text} → {new_text}")
             else:
-                # String replacement
                 if re.search(pattern, text):
                     old_matches = re.findall(pattern, text)
                     text = re.sub(pattern, replacement, text)
                     corrections_made.append(f"{pattern} → {replacement}")
         
-        # 3. Character-level corrections
         for pattern, fix_func in self.char_corrections.items():
             matches = list(re.finditer(pattern, text))
             for match in reversed(matches):
@@ -130,7 +105,7 @@ class OCRTextCorrector:
         
         if debug and corrections_made:
             print(f"[OCR CORRECTIONS] Made {len(corrections_made)} corrections:")
-            for correction in corrections_made[:10]:  # Show first 10
+            for correction in corrections_made[:10]:  
                 print(f"  - {correction}")
             if len(corrections_made) > 10:
                 print(f"  ... and {len(corrections_made) - 10} more")
@@ -149,7 +124,7 @@ class OCRTextCorrector:
             "has_total_keyword": bool(re.search(r'\bTOTAL\b', text, re.IGNORECASE)),
             "has_date_keyword": bool(re.search(r'\bDATE\b', text, re.IGNORECASE)),
             "has_dollar_amounts": bool(re.search(r'\$\s*[\d,]+\.\d{2}', text)),
-            "no_invoke_misread": "INVOKE" not in text,  # Should be corrected
+            "no_invoke_misread": "INVOKE" not in text,  
         }
         
         checks["all_passed"] = all(checks.values())
@@ -157,7 +132,6 @@ class OCRTextCorrector:
         return checks
 
 
-# Integration with regex extractor
 def enhance_regex_extractor():
     """
     How to integrate OCRTextCorrector with RegexInvoiceExtractor
@@ -191,10 +165,8 @@ class RegexInvoiceExtractor:
 
 
 if __name__ == "__main__":
-    # Test the corrector
     corrector = OCRTextCorrector()
     
-    # Sample text with OCR errors
     sample_text = """
     Pacific Food Importers
     INVOKE NO: 378093
@@ -221,5 +193,5 @@ if __name__ == "__main__":
     print("="*80)
     validation = corrector.validate_invoice_text(corrected)
     for check, passed in validation.items():
-        status = "✅" if passed else "❌"
+        status = "OK" if passed else "FAIL"
         print(f"  {status} {check}: {passed}")

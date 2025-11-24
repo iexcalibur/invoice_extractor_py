@@ -9,7 +9,6 @@ import os
 import warnings
 import logging
 
-# Suppress warnings for cleaner output
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", message=".*device.*")
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -38,7 +37,6 @@ try:
     ENHANCED_OCR_AVAILABLE = True
 except ImportError:
     ENHANCED_OCR_AVAILABLE = False
-    # Not critical - can fall back to regular OCR
 
 try:
     import easyocr
@@ -81,51 +79,26 @@ except ImportError:
 
 
 def _parse_claude_json_response(response_text: str, debug: bool = False) -> Optional[Dict[str, Any]]:
-    """
-    Robustly parse JSON from Claude API response
-    
-    Handles:
-    - Markdown code fences (```json ... ```)
-    - Text before/after JSON
-    - Multiple code blocks
-    - Incomplete JSON
-    - Various edge cases
-    
-    Args:
-        response_text: Raw text response from Claude
-        debug: If True, print debugging information
-        
-    Returns:
-        Parsed JSON dict or None if parsing fails
-    """
     if not response_text or not response_text.strip():
         if debug:
             print(f"  [DEBUG] Empty response text")
         return None
     
-    # Step 1: Remove markdown code fences
     text = response_text.strip()
     
-    # Remove ```json at start
     text = re.sub(r'^```json\s*', '', text, flags=re.IGNORECASE)
-    # Remove ``` at start (any language)
     text = re.sub(r'^```\w*\s*', '', text)
-    # Remove ``` at end
     text = re.sub(r'\s*```$', '', text)
     text = text.strip()
     
-    # Step 2: Try to find JSON object in the text
-    # Look for first { and last } to extract JSON
     first_brace = text.find('{')
     last_brace = text.rfind('}')
     
     if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
         json_text = text[first_brace:last_brace + 1]
     else:
-        # No braces found, try the whole text
         json_text = text
     
-    # Step 3: Try to parse JSON
     try:
         result = json.loads(json_text)
         if debug:
@@ -137,16 +110,12 @@ def _parse_claude_json_response(response_text: str, debug: bool = False) -> Opti
             print(f"  [DEBUG] Attempted to parse: {json_text[:200]}...")
             print(f"  [DEBUG] Full response (first 500 chars): {response_text[:500]}")
         
-        # Try to fix common issues
-        # Remove any text before first {
         if '{' in json_text:
             json_text = json_text[json_text.index('{'):]
         
-        # Remove any text after last }
         if '}' in json_text:
             json_text = json_text[:json_text.rindex('}') + 1]
         
-        # Try again
         try:
             result = json.loads(json_text)
             if debug:
@@ -159,8 +128,6 @@ def _parse_claude_json_response(response_text: str, debug: bool = False) -> Opti
 
 
 class EnhancedInvoiceExtractor:
-    """Enhanced invoice extractor with hybrid approach: Regex → LayoutLMv3 → OCR → Claude"""
-    
     def __init__(
         self, 
         api_key: Optional[str] = None, 
@@ -169,24 +136,10 @@ class EnhancedInvoiceExtractor:
         use_layoutlmv3: bool = True,
         use_ocr: bool = True,
         ocr_engine: str = "tesseract",
-        use_enhanced_ocr: bool = True,  # Use enhanced OCR preprocessing if available
+        use_enhanced_ocr: bool = True,  
         regex_confidence_threshold: float = 0.60,
         layoutlmv3_confidence_threshold: float = 0.50
     ):
-        """
-        Initialize the enhanced invoice extractor with regex support
-        
-        Args:
-            api_key: Anthropic API key (or set ANTHROPIC_API_KEY env var)
-            model: Claude model to use as fallback
-            use_regex: Whether to use regex extraction first (fastest, free)
-            use_layoutlmv3: Whether to use LayoutLMv3 model (cheaper option)
-            use_ocr: Whether to use OCR as fallback
-            ocr_engine: OCR engine to use ("tesseract" or "easyocr")
-            use_enhanced_ocr: Use enhanced OCR preprocessing if available (default: True)
-            regex_confidence_threshold: Minimum confidence for regex extraction (default: 0.60)
-            layoutlmv3_confidence_threshold: Minimum confidence for LayoutLMv3 (default: 0.50)
-        """
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self.model = model
         self.use_regex = use_regex and REGEX_EXTRACTOR_AVAILABLE
@@ -197,7 +150,6 @@ class EnhancedInvoiceExtractor:
         self.regex_confidence_threshold = regex_confidence_threshold
         self.layoutlmv3_confidence_threshold = layoutlmv3_confidence_threshold
         
-        # Initialize vendor registry
         if VENDOR_REGISTRY_AVAILABLE:
             try:
                 self.vendor_registry = get_vendor_registry()
@@ -274,7 +226,6 @@ class EnhancedInvoiceExtractor:
                     print("Warning: No OCR engine available")
     
     def detect_file_type(self, file_path: str) -> str:
-        """Detect if file is PDF or image"""
         path = Path(file_path)
         ext = path.suffix.lower()
         
@@ -286,7 +237,6 @@ class EnhancedInvoiceExtractor:
             return 'unknown'
     
     def load_images(self, file_path: str) -> List[Image.Image]:
-        """Load images from PDF or image file"""
         file_type = self.detect_file_type(file_path)
         
         if file_type == 'pdf':
@@ -310,7 +260,6 @@ class EnhancedInvoiceExtractor:
             raise ValueError(f"Unsupported file type: {file_path}")
     
     def preprocess_image(self, image: Image.Image) -> Image.Image:
-        """Enhance image for better extraction results"""
         try:
             img_array = np.array(image)
             
@@ -330,15 +279,10 @@ class EnhancedInvoiceExtractor:
             return image
     
     def extract_with_regex(self, image: Image.Image) -> Optional[Dict[str, Any]]:
-        """
-        Extract invoice data using regex patterns (fastest, free)
-        Only works for known vendors: Frank's Quality Produce and Pacific Food Importers
-        """
         if not self.use_regex or self.regex_extractor is None:
             return None
         
         try:
-            # Use enhanced OCR if available and enabled, otherwise fall back to standard OCR
             if self.use_enhanced_ocr and TESSERACT_AVAILABLE:
                 debug_ocr = os.getenv("DEBUG_REGEX", "").lower() == "true"
                 ocr_text = extract_text_with_enhanced_ocr(image, debug=debug_ocr)
@@ -383,7 +327,6 @@ class EnhancedInvoiceExtractor:
             return None
     
     def _extract_layout_structure(self, ocr_data: Dict, image: Image.Image) -> Dict[str, Any]:
-        """Extract layout structure from OCR data using bounding boxes"""
         layout_info = {
             "tables": [],
             "headers": [],
@@ -450,7 +393,6 @@ class EnhancedInvoiceExtractor:
         return layout_info
     
     def _calculate_confidence(self, extracted_data: Dict[str, Any], layout_info: Dict[str, Any]) -> float:
-        """Calculate confidence score for extracted data"""
         confidence = 0.0
         
         required_fields = ["invoice_number", "date", "vendor_name", "total_amount"]
@@ -477,7 +419,6 @@ class EnhancedInvoiceExtractor:
         return min(confidence, 1.0)
     
     def extract_with_layoutlmv3(self, image: Image.Image) -> Optional[Dict[str, Any]]:
-        """Extract invoice data using LayoutLMv3 model with layout understanding"""
         if not self.use_layoutlmv3 or self.layoutlmv3_processor is None:
             return None
         
@@ -587,7 +528,6 @@ class EnhancedInvoiceExtractor:
             return None
     
     def _get_vendor_instructions(self, ocr_text: str) -> str:
-        """Get vendor-specific extraction instructions"""
         # Try vendor registry first (preferred method)
         if self.vendor_registry:
             vendor = self.vendor_registry.detect_vendor(
@@ -639,7 +579,6 @@ CRITICAL:
         return ""
     
     def _get_vendor_instructions_fallback(self) -> str:
-        """Fallback hardcoded vendor instructions for Claude Vision"""
         return """
 For Frank's Quality Produce:
 - Invoice Number: MUST start with "200" (e.g., "Invoice #20065629", "Invoice #20012345")
@@ -662,7 +601,6 @@ For Pacific Food Importers:
 """
     
     def _build_extraction_prompt(self, ocr_text: str, vendor_instructions: str) -> str:
-        """Build extraction prompt with vendor-specific instructions"""
         base_prompt = f"""Extract invoice data from this OCR text.
 
 OCR Text:
@@ -714,12 +652,10 @@ Return ONLY valid JSON:
         return base_prompt
     
     def extract_with_ocr(self, image: Image.Image) -> Optional[Dict[str, Any]]:
-        """Extract invoice data using OCR + LLM parsing"""
         if not self.use_ocr:
             return None
         
         try:
-            # Extract text using OCR
             if self.ocr_engine == "tesseract" and TESSERACT_AVAILABLE:
                 ocr_text = pytesseract.image_to_string(image)
             elif self.ocr_engine == "easyocr" and EASYOCR_AVAILABLE:
@@ -728,7 +664,6 @@ Return ONLY valid JSON:
             else:
                 return None
             
-            # Use Claude to parse if available
             if self.claude_client:
                 try:
                     vendor_instructions = self._get_vendor_instructions(ocr_text)
@@ -745,7 +680,6 @@ Return ONLY valid JSON:
                     
                     response_text = response.content[0].text.strip()
                     
-                    # Use robust JSON parser
                     extracted_data = _parse_claude_json_response(response_text, debug=True)
                     
                     if not extracted_data:
@@ -772,7 +706,6 @@ Return ONLY valid JSON:
             return None
     
     def _parse_ocr_text_basic(self, text: str) -> Dict[str, Any]:
-        """Basic OCR text parsing fallback"""
         return {
             "invoice_number": "",
             "date": "",
@@ -783,7 +716,6 @@ Return ONLY valid JSON:
         }
     
     def extract_with_claude(self, image: Image.Image) -> Optional[Dict[str, Any]]:
-        """Extract invoice data using Claude Vision (most accurate, most expensive)"""
         if not self.claude_client:
             return None
         
@@ -794,10 +726,8 @@ Return ONLY valid JSON:
             processed_image.save(buffered, format="PNG")
             img_base64 = base64.b64encode(buffered.getvalue()).decode()
             
-            # Get vendor-specific instructions (try vendor registry first)
             vendor_instructions = ""
             if self.vendor_registry:
-                # Extract OCR text for vendor detection
                 try:
                     if TESSERACT_AVAILABLE:
                         ocr_text = pytesseract.image_to_string(image)
@@ -820,7 +750,7 @@ Return ONLY valid JSON:
                     # If vendor detection fails, fall back to hardcoded instructions
                     pass
             
-            # Fallback to hardcoded instructions if vendor registry didn't provide any
+            
             if not vendor_instructions:
                 vendor_instructions = self._get_vendor_instructions_fallback()
             
@@ -867,7 +797,6 @@ Return ONLY valid JSON:
             
             response_text = response.content[0].text.strip()
             
-            # Use robust JSON parser
             extracted_data = _parse_claude_json_response(response_text, debug=True)
             
             if not extracted_data:
@@ -889,15 +818,12 @@ Return ONLY valid JSON:
             return None
     
     def validate_extraction(self, result: Dict[str, Any], strict: bool = False, debug: bool = False) -> bool:
-        """Validate that extracted data has required fields"""
         required_fields = ['invoice_number', 'date', 'vendor_name', 'total_amount']
         
-        # Use vendor registry for validation if available
         vendor_name = result.get('vendor_name', '')
         invoice_number = result.get('invoice_number', '')
         
         if self.vendor_registry and vendor_name and invoice_number:
-            # Detect vendor using registry
             vendor = self.vendor_registry.detect_vendor(
                 vendor_name=vendor_name,
                 invoice_number=str(invoice_number),
@@ -905,7 +831,6 @@ Return ONLY valid JSON:
             )
             
             if vendor:
-                # Validate invoice number using vendor pattern
                 is_valid, error_msg = self.vendor_registry.validate_invoice_number(
                     str(invoice_number),
                     vendor,
@@ -958,10 +883,6 @@ Return ONLY valid JSON:
         return True
     
     def extract_robust(self, file_path: str) -> Dict[str, Any]:
-        """
-        Extract invoice data using hybrid approach with fallback chain:
-        0. Regex (fastest, free) → 1. LayoutLMv3 (cheap) → 2. OCR (medium) → 3. Claude Vision (expensive)
-        """
         if not os.path.exists(file_path):
             return {
                 "status": "error",
@@ -1027,13 +948,10 @@ Return ONLY valid JSON:
                                 page_result = None
                 
                 if page_result:
-                    # Post-process: Validate and fix vendor name and invoice numbers using vendor registry
                     vendor_name = page_result.get('vendor_name', '')
                     invoice_number = page_result.get('invoice_number', '')
                     
-                    # Use vendor registry to detect and fix vendor information
                     if self.vendor_registry:
-                        # Detect vendor from extracted data
                         vendor = self.vendor_registry.detect_vendor(
                             vendor_name=vendor_name,
                             invoice_number=str(invoice_number) if invoice_number else "",
@@ -1041,12 +959,10 @@ Return ONLY valid JSON:
                         )
                         
                         if vendor:
-                            # Fix vendor name to match registry standard
                             if vendor_name.lower() != vendor.vendor_name.lower():
                                 print(f"  ⚠ Warning: Incorrect vendor name '{vendor_name}' - correcting to '{vendor.vendor_name}'")
                                 page_result['vendor_name'] = vendor.vendor_name
                             
-                            # Validate and optionally fix invoice number
                             is_valid, error_msg = self.vendor_registry.validate_invoice_number(
                                 str(invoice_number) if invoice_number else "",
                                 vendor,
@@ -1054,14 +970,12 @@ Return ONLY valid JSON:
                             )
                             
                             if not is_valid and invoice_number:
-                                # Try to find correct invoice number from OCR text
                                 print(f"  ⚠ Warning: Invoice number '{invoice_number}' doesn't match {vendor.vendor_name} pattern")
                                 print(f"     Attempting to find correct invoice number...")
                                 
                                 if TESSERACT_AVAILABLE:
                                     try:
                                         ocr_text = pytesseract.image_to_string(image)
-                                        # Use vendor's invoice number regex to find correct number
                                         pattern = vendor.invoice_number_regex.replace('^', '').replace('$', '')
                                         correct_inv_match = re.search(
                                             rf'{vendor.invoice_number_label}\s*:?\s*({pattern})',
@@ -1072,14 +986,8 @@ Return ONLY valid JSON:
                                             page_result['invoice_number'] = correct_inv_match.group(1)
                                             print(f"     ✓ Found correct invoice number: {page_result['invoice_number']}")
                                     except Exception:
-                                        pass  # Ignore OCR errors, use extracted invoice number as-is
-                    # Note: Removed hardcoded fallback - vendor registry is preferred method
-                    # If vendor registry is not available, extracted data is used as-is
-                    
-                    # Ensure confidence score is set (calculate if missing)
+                                        pass  
                     if '_confidence' not in page_result or page_result.get('_confidence') is None:
-                        # Calculate confidence for methods that don't provide it (OCR, Claude Vision)
-                        # Use empty layout_info since we don't have OCR data at this point
                         layout_info = {}
                         page_result['_confidence'] = self._calculate_confidence(page_result, layout_info)
                     
@@ -1122,19 +1030,6 @@ def extract_invoice_enhanced(
     use_ocr: bool = True,
     use_regex: bool = True
 ) -> Dict[str, Any]:
-    """
-    Convenience function to extract invoice data with enhanced pipeline
-    
-    Args:
-        file_path: Path to PDF or image file
-        api_key: Optional API key (or set ANTHROPIC_API_KEY env var)
-        use_layoutlmv3: Whether to use LayoutLMv3 model
-        use_ocr: Whether to use OCR
-        use_regex: Whether to use regex extraction first
-        
-    Returns:
-        Dictionary with extraction results
-    """
     extractor = EnhancedInvoiceExtractor(
         api_key=api_key,
         use_layoutlmv3=use_layoutlmv3,

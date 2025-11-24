@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Main script to extract invoice data from PDFs and Images
-Enhanced with hybrid approach: Donut → OCR → Claude
-"""
 
 import os
 import sys
@@ -17,7 +13,6 @@ from core.database import InvoiceDatabase
 
 
 def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceDatabase = None) -> dict:
-    """Process a single PDF or image file"""
     print(f"\n{'='*60}")
     print(f"Processing: {file_path}")
     print(f"{'='*60}")
@@ -31,7 +26,6 @@ def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceD
         )
         result = extractor.extract_robust(file_path)
         
-        # Ensure output directory exists
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
@@ -84,7 +78,6 @@ def process_single_file(file_path: str, output_dir: str = "output", db: InvoiceD
 
 
 def process_directory(directory: str, output_dir: str = "output", recursive: bool = False, db: InvoiceDatabase = None) -> List[dict]:
-    """Process all PDF and image files in a directory"""
     directory_path = Path(directory)
     
     if not directory_path.exists():
@@ -134,7 +127,6 @@ def process_directory(directory: str, output_dir: str = "output", recursive: boo
 
 
 def main():
-    """Main entry point"""
     parser = argparse.ArgumentParser(
         description="Extract invoice data from PDF and image files using hybrid approach (Regex → LayoutLMv3 → OCR → Claude)",
         formatter_class=argparse.RawDescriptionHelpFormatter,

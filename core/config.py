@@ -1,10 +1,3 @@
-"""
-Configuration settings for invoice extraction system
-
-This module provides centralized configuration management for the invoice
-extraction pipeline, including API keys, model settings, and processing parameters.
-"""
-
 import os
 from typing import Optional, Dict, Any
 from pathlib import Path
@@ -18,7 +11,6 @@ except ImportError:
 
 
 class Config:
-    """Central configuration for invoice extraction system"""
     
     ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     
@@ -82,21 +74,20 @@ class Config:
         }
     }
     
-    # Vendor-specific patterns
     VENDOR_PATTERNS: Dict[str, Dict[str, str]] = {
         'franks': {
             'name': "Frank's Quality Produce",
             'invoice_prefix': '200',
-            'invoice_pattern': r'200\d{6}',
+            'invoice_pattern': r'200\d{5}',
         },
         'pacific': {
             'name': 'Pacific Food Importers',
             'invoice_prefix': '37',
-            'invoice_pattern': r'37\d{5}',
+            'invoice_pattern': r'37\d{4}',
         }
     }
     
-    MAX_WORKERS: int = 4  # For parallel processing
+    MAX_WORKERS: int = 4 
     BATCH_SIZE: int = 10
     CACHE_ENABLED: bool = True
     
@@ -106,36 +97,26 @@ class Config:
     
     @classmethod
     def validate(cls) -> tuple[bool, list[str]]:
-        """
-        Validate that required configuration is present and valid
-        
-        Returns:
-            Tuple of (is_valid, list_of_errors)
-        """
         errors = []
         
-        # Check API key if vision/llm features enabled
         if (cls.USE_VISION or cls.USE_OCR) and not cls.ANTHROPIC_API_KEY:
             errors.append(
                 "ANTHROPIC_API_KEY not set but required for LLM features. "
                 "Set it as environment variable or in .env file"
             )
         
-        # Validate thresholds
         if not (0.0 <= cls.REGEX_CONFIDENCE_THRESHOLD <= 1.0):
             errors.append(f"REGEX_CONFIDENCE_THRESHOLD must be between 0 and 1")
         
         if not (0.0 <= cls.LAYOUTLMV3_CONFIDENCE_THRESHOLD <= 1.0):
             errors.append(f"LAYOUTLMV3_CONFIDENCE_THRESHOLD must be between 0 and 1")
         
-        # Validate paths
         output_path = Path(cls.OUTPUT_DIR)
         try:
             output_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             errors.append(f"Cannot create output directory: {e}")
         
-        # Check OCR engine availability
         if cls.USE_OCR:
             if cls.OCR_ENGINE == "tesseract":
                 try:
@@ -149,7 +130,6 @@ class Config:
                 except ImportError:
                     errors.append("EasyOCR not installed but set as OCR engine")
         
-        # Check LayoutLMv3 availability
         if cls.USE_LAYOUTLMV3:
             try:
                 import transformers
@@ -161,15 +141,6 @@ class Config:
     
     @classmethod
     def get_api_key(cls) -> str:
-        """
-        Get API key with validation
-        
-        Returns:
-            API key string
-            
-        Raises:
-            ValueError: If API key is not configured
-        """
         if not cls.ANTHROPIC_API_KEY:
             raise ValueError(
                 "ANTHROPIC_API_KEY not set. "
@@ -180,7 +151,6 @@ class Config:
     
     @classmethod
     def get_summary(cls) -> str:
-        """Get a human-readable configuration summary"""
         summary = []
         summary.append("=" * 60)
         summary.append("INVOICE EXTRACTION CONFIGURATION")
@@ -216,18 +186,10 @@ class Config:
     
     @classmethod
     def print_config(cls):
-        """Print configuration summary"""
         print(cls.get_summary())
 
 
-# Convenience function for quick validation
 def validate_config() -> bool:
-    """
-    Validate configuration and print results
-    
-    Returns:
-        True if configuration is valid, False otherwise
-    """
     is_valid, errors = Config.validate()
     
     if is_valid:
@@ -241,5 +203,4 @@ def validate_config() -> bool:
 
 
 if __name__ == "__main__":
-    # When run directly, print configuration summary
     Config.print_config()

@@ -1,16 +1,3 @@
-"""
-Vendor Registry System - Permanent Solution for Invoice Pattern Recognition
-
-This module provides a scalable, maintainable way to:
-1. Detect vendor from invoice content
-2. Apply vendor-specific validation rules
-3. Learn patterns from historical data
-4. Add new vendors without code changes
-
-Author: ML Engineer
-Date: November 2024
-"""
-
 import re
 import json
 from typing import Dict, List, Optional, Any, Tuple
@@ -21,59 +8,29 @@ from datetime import datetime
 
 @dataclass
 class VendorPattern:
-    """Vendor-specific extraction patterns"""
     vendor_id: str
     vendor_name: str
-    
-    # Detection patterns (how to identify this vendor)
-    name_patterns: List[str]  # Regex patterns in vendor name
-    invoice_prefix_patterns: List[str]  # Invoice number patterns (e.g., ["378.*", "379.*"])
-    
-    # Extraction hints (where to find fields)
-    invoice_number_location: str  # "top_right", "top_left", "header", etc.
-    invoice_number_label: str  # Label before invoice number (e.g., "INVOICE", "Invoice #")
-    
-    # Validation rules
-    invoice_number_regex: str  # Regex for valid invoice number
+    name_patterns: List[str]
+    invoice_prefix_patterns: List[str]
+    invoice_number_location: str
+    invoice_number_label: str
+    invoice_number_regex: str
     invoice_number_min_length: int
     invoice_number_max_length: int
-    
-    # Field extraction hints
-    column_mappings: Dict[str, str]  # Maps field to column name
-    
-    # Learning data
-    confidence: float = 1.0  # How confident we are in these patterns
-    sample_count: int = 0  # How many invoices we've seen
+    column_mappings: Dict[str, str]
+    confidence: float = 1.0
+    sample_count: int = 0
     last_updated: str = ""
-    
-    # Additional metadata
     notes: str = ""
 
 
 class VendorRegistry:
-    """
-    Central registry for vendor patterns with learning capabilities
-    
-    Features:
-    - Vendor detection from invoice content
-    - Pattern-based validation
-    - Learning from historical data
-    - Easy vendor addition via config
-    """
-    
     def __init__(self, registry_file: str = "vendor_registry.json"):
-        """
-        Initialize vendor registry
-        
-        Args:
-            registry_file: Path to JSON file containing vendor patterns
-        """
         self.registry_file = Path(registry_file)
         self.vendors: Dict[str, VendorPattern] = {}
         self.load_registry()
     
     def load_registry(self):
-        """Load vendor patterns from file or initialize with defaults"""
         if self.registry_file.exists():
             try:
                 with open(self.registry_file, 'r') as f:
@@ -92,9 +49,6 @@ class VendorRegistry:
             self.save_registry()
     
     def _initialize_default_vendors(self):
-        """Initialize with known vendors (Pacific Food, Frank's)"""
-        
-        # Pacific Food Importers
         self.vendors["pacific_food"] = VendorPattern(
             vendor_id="pacific_food",
             vendor_name="Pacific Food Importers",
@@ -102,10 +56,10 @@ class VendorRegistry:
                 r"pacific\s+food\s+importers?",
                 r"pacific\s+food"
             ],
-            invoice_prefix_patterns=["^37"],  # ✅ Accept any 37X
+            invoice_prefix_patterns=["^37"],
             invoice_number_location="top_right",
             invoice_number_label="INVOICE",
-            invoice_number_regex=r"^37\d{4}$",  # ✅ 37 + 4 digits = 6 total
+            invoice_number_regex=r"^37\d{4}$",
             invoice_number_min_length=6,
             invoice_number_max_length=6,
             column_mappings={
@@ -120,7 +74,6 @@ class VendorRegistry:
             notes="Invoices always start with 37 (370-379). Be careful not to confuse with ORDER NO."
         )
         
-        # Frank's Quality Produce
         self.vendors["franks"] = VendorPattern(
             vendor_id="franks",
             vendor_name="Frank's Quality Produce",
@@ -147,7 +100,6 @@ class VendorRegistry:
         )
     
     def save_registry(self):
-        """Save vendor patterns to file"""
         try:
             data = {
                 v_id: asdict(vendor)
@@ -166,25 +118,11 @@ class VendorRegistry:
         ocr_text: str = "",
         debug: bool = False
     ) -> Optional[VendorPattern]:
-        """
-        Detect vendor from invoice content
-        
-        Args:
-            vendor_name: Extracted vendor name
-            invoice_number: Extracted invoice number
-            ocr_text: Full OCR text (optional, for better detection)
-            debug: Print debug information
-            
-        Returns:
-            VendorPattern if detected, None otherwise
-        """
         scores = {}
         
         for v_id, vendor in self.vendors.items():
             score = 0.0
             reasons = []
-            
-            # Check vendor name match
             if vendor_name:
                 vendor_name_lower = vendor_name.lower()
                 for pattern in vendor.name_patterns:
@@ -193,7 +131,6 @@ class VendorRegistry:
                         reasons.append(f"name_match:{pattern}")
                         break
             
-            # Check invoice number prefix
             if invoice_number:
                 inv_str = str(invoice_number)
                 for pattern in vendor.invoice_prefix_patterns:
@@ -202,7 +139,6 @@ class VendorRegistry:
                         reasons.append(f"invoice_prefix:{pattern}")
                         break
             
-            # Check OCR text for vendor mentions
             if ocr_text:
                 ocr_lower = ocr_text.lower()
                 for pattern in vendor.name_patterns:
@@ -216,12 +152,11 @@ class VendorRegistry:
                 if debug:
                     print(f"  [DEBUG] Vendor '{v_id}': score={score:.2f}, reasons={reasons}")
         
-        # Return vendor with highest score
         if scores:
             best_vendor_id = max(scores.keys(), key=lambda k: scores[k][0])
             best_score, reasons = scores[best_vendor_id]
             
-            if best_score >= 0.5:  # Minimum confidence threshold
+            if best_score >= 0.5:
                 if debug:
                     print(f"  [DEBUG] Detected vendor: {best_vendor_id} (score={best_score:.2f})")
                 return self.vendors[best_vendor_id]
@@ -236,30 +171,17 @@ class VendorRegistry:
         vendor: VendorPattern,
         debug: bool = False
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Validate invoice number against vendor pattern
-        
-        Args:
-            invoice_number: Invoice number to validate
-            vendor: Vendor pattern
-            debug: Print debug info
-            
-        Returns:
-            (is_valid, error_message)
-        """
         if not invoice_number:
             return False, "Invoice number is empty"
         
         inv_str = str(invoice_number).strip()
         
-        # Check length
         if len(inv_str) < vendor.invoice_number_min_length:
             return False, f"Too short (min: {vendor.invoice_number_min_length})"
         
         if len(inv_str) > vendor.invoice_number_max_length:
             return False, f"Too long (max: {vendor.invoice_number_max_length})"
         
-        # Check regex pattern
         if not re.match(vendor.invoice_number_regex, inv_str):
             return False, f"Doesn't match pattern: {vendor.invoice_number_regex}"
         
@@ -269,21 +191,11 @@ class VendorRegistry:
         return True, None
     
     def get_extraction_instructions(self, vendor: VendorPattern) -> str:
-        """
-        Generate extraction instructions for a specific vendor
-        
-        Args:
-            vendor: Vendor pattern
-            
-        Returns:
-            Extraction instructions string
-        """
         instructions = f"""
 VENDOR: {vendor.vendor_name.upper()}
 - Vendor Name: MUST be exactly "{vendor.vendor_name}"
 """
         
-        # Invoice number instructions
         inv_prefixes = ", ".join(vendor.invoice_prefix_patterns)
         instructions += f"""- Invoice Number: Located at {vendor.invoice_number_location}, labeled "{vendor.invoice_number_label}"
   * CRITICAL: Invoice number MUST match pattern: {vendor.invoice_number_regex}
@@ -292,13 +204,11 @@ VENDOR: {vendor.vendor_name.upper()}
   * DO NOT confuse with other numbers (PO, Order No, etc.)
 """
         
-        # Column mappings
         if vendor.column_mappings:
             instructions += "\n- Column Mappings:\n"
             for field, column in vendor.column_mappings.items():
                 instructions += f"  * {field}: '{column}' column\n"
         
-        # Notes
         if vendor.notes:
             instructions += f"\nIMPORTANT NOTES:\n{vendor.notes}\n"
         
@@ -314,18 +224,6 @@ VENDOR: {vendor.vendor_name.upper()}
         invoice_number_length: Tuple[int, int],
         **kwargs
     ):
-        """
-        Add a new vendor to the registry
-        
-        Args:
-            vendor_id: Unique identifier (e.g., "acme_corp")
-            vendor_name: Display name (e.g., "ACME Corporation")
-            name_patterns: Regex patterns to detect vendor name
-            invoice_prefix_patterns: Invoice number prefix patterns
-            invoice_number_regex: Full regex for invoice number
-            invoice_number_length: (min_length, max_length) tuple
-            **kwargs: Additional VendorPattern fields
-        """
         min_len, max_len = invoice_number_length
         
         self.vendors[vendor_id] = VendorPattern(
@@ -354,21 +252,12 @@ VENDOR: {vendor.vendor_name.upper()}
         extracted_data: Dict[str, Any],
         was_successful: bool
     ):
-        """
-        Update vendor patterns based on extraction results (learning)
-        
-        Args:
-            vendor_id: Vendor identifier
-            extracted_data: Extraction results
-            was_successful: Whether extraction was successful
-        """
         if vendor_id not in self.vendors:
             return
         
         vendor = self.vendors[vendor_id]
         vendor.sample_count += 1
         
-        # Update confidence based on success
         if was_successful:
             vendor.confidence = min(1.0, vendor.confidence + 0.01)
         else:
@@ -376,11 +265,9 @@ VENDOR: {vendor.vendor_name.upper()}
         
         vendor.last_updated = datetime.now().isoformat()
         
-        # Save updated registry
         self.save_registry()
     
     def get_all_vendors(self) -> List[Dict[str, Any]]:
-        """Get all registered vendors"""
         return [asdict(vendor) for vendor in self.vendors.values()]
     
     def suggest_vendor_pattern(
@@ -388,17 +275,6 @@ VENDOR: {vendor.vendor_name.upper()}
         sample_invoices: List[Dict[str, Any]],
         vendor_name: str
     ) -> Dict[str, Any]:
-        """
-        Suggest vendor pattern based on sample invoices (ML approach)
-        
-        Args:
-            sample_invoices: List of successfully extracted invoices
-            vendor_name: Vendor name
-            
-        Returns:
-            Suggested VendorPattern as dict
-        """
-        # Analyze invoice numbers to find pattern
         invoice_numbers = [
             str(inv.get('invoice_number', ''))
             for inv in sample_invoices
@@ -408,23 +284,19 @@ VENDOR: {vendor.vendor_name.upper()}
         if not invoice_numbers:
             return {}
         
-        # Find common prefix
         prefix_counts = {}
         for inv_num in invoice_numbers:
             for i in range(1, min(5, len(inv_num))):
                 prefix = inv_num[:i]
                 prefix_counts[prefix] = prefix_counts.get(prefix, 0) + 1
         
-        # Find most common prefix
         common_prefix = max(prefix_counts.keys(), key=lambda p: prefix_counts[p])
         prefix_pattern = f"^{common_prefix}"
         
-        # Determine length range
         lengths = [len(inv) for inv in invoice_numbers]
         min_len = min(lengths)
         max_len = max(lengths)
         
-        # Create regex pattern
         if min_len == max_len:
             regex_pattern = f"^{common_prefix}\\d{{{max_len - len(common_prefix)}}}$"
         else:
@@ -437,7 +309,7 @@ VENDOR: {vendor.vendor_name.upper()}
             "invoice_number_min_length": min_len,
             "invoice_number_max_length": max_len,
             "sample_count": len(sample_invoices),
-            "confidence": 0.7,  # Initial confidence
+            "confidence": 0.7,
             "notes": f"Auto-generated from {len(sample_invoices)} sample invoices"
         }
         
@@ -449,18 +321,15 @@ VENDOR: {vendor.vendor_name.upper()}
         return suggestion
 
 
-# Global registry instance
 _registry = None
 
 def get_vendor_registry(registry_file: str = "vendor_registry.json") -> VendorRegistry:
-    """Get or create global vendor registry instance"""
     global _registry
     if _registry is None:
         _registry = VendorRegistry(registry_file)
     return _registry
 
 
-# Example usage and testing
 if __name__ == "__main__":
     print("="*60)
     print("Vendor Registry System - Demo")
@@ -534,7 +403,6 @@ if __name__ == "__main__":
         is_valid, error = registry.validate_invoice_number("INV-123456", vendor, debug=True)
         print(f"  Invoice 'INV-123456': {'✓ Valid' if is_valid else f'✗ Invalid - {error}'}")
     
-    # Test pattern suggestion (ML approach)
     print("\n3. Suggesting Pattern from Samples:")
     print("-" * 40)
     sample_invoices = [
