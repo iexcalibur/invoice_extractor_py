@@ -8,6 +8,9 @@
 > **Intelligent invoice data extraction using hybrid AI approach**  
 > Combining Regex → LayoutLMv3 → OCR → Claude Vision for optimal accuracy and cost-efficiency
 
+<img width="1506" height="891" alt="Screenshot 2025-11-24 at 11 41 54 PM" src="https://github.com/user-attachments/assets/543a2694-5049-4747-81d8-7d03769a80e6" />
+
+
 ## 🎯 Overview
 
 This system automatically extracts structured data from invoice PDFs and images using a sophisticated 4-tier hybrid approach. It achieves **100% accuracy** while reducing costs by **92-96%** compared to pure LLM solutions.
