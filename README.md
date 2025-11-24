@@ -189,4 +189,3 @@ For detailed documentation, see the [`doc/`](doc/) folder:
 
 ---
 
-**Built with ❤️ for automated invoice processing**
