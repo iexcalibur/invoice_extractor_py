@@ -234,11 +234,13 @@ STYLES = """
         font-size: 1.2rem;
         font-weight: 700;
         margin-bottom: 0.5rem;
+        color: #374151;
     }
     
     .status-text {
         font-size: 1rem;
         line-height: 1.6;
+        color: #374151;
     }
     
     /* Buttons */
