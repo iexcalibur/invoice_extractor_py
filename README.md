@@ -94,6 +94,17 @@ Invoices/
 │   ├── ocr_corrector.py           # OCR error correction
 │   └── vendor_registry.py         # Vendor pattern registry system
 │
+├── components/                    # Streamlit UI components
+│   ├── __init__.py
+│   ├── about.py                   # About tab component
+│   ├── analytics.py               # Analytics & insights tab
+│   ├── database.py                # Database browser tab
+│   ├── evaluation.py              # Evaluation & metrics tab
+│   ├── overview.py                # Overview dashboard tab
+│   ├── styles.py                  # CSS styles and theming
+│   ├── upload.py                  # File upload & extraction tab
+│   └── utils.py                    # Utility functions for UI
+│
 ├── scripts/                       # Utility scripts
 │   ├── diagnose_extraction.py     # Debugging & diagnostics
 │   └── empty_db.py                # Database management

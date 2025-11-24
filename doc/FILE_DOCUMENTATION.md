@@ -6,11 +6,12 @@
 
 1. [Project Structure Overview](#project-structure-overview)
 2. [Core Modules](#core-modules)
-3. [Scripts & Utilities](#scripts--utilities)
-4. [Tests & Evaluation](#tests--evaluation)
-5. [Configuration Files](#configuration-files)
-6. [Documentation Files](#documentation-files)
-7. [Data & Output Directories](#data--output-directories)
+3. [Streamlit UI Components](#streamlit-ui-components)
+4. [Scripts & Utilities](#scripts--utilities)
+5. [Tests & Evaluation](#tests--evaluation)
+6. [Configuration Files](#configuration-files)
+7. [Documentation Files](#documentation-files)
+8. [Data & Output Directories](#data--output-directories)
 
 ---
 
@@ -28,6 +29,17 @@ invoice-extraction/
 │   ├── enhanced_ocr.py               # OCR preprocessing & enhancement
 │   ├── ocr_corrector.py              # Post-OCR text correction
 │   └── vendor_registry.py            # Vendor pattern registry system
+│
+├── 📁 components/                    # Streamlit UI components
+│   ├── __init__.py                   # Package initialization
+│   ├── about.py                      # About tab component
+│   ├── analytics.py                  # Analytics & insights tab
+│   ├── database.py                   # Database browser tab
+│   ├── evaluation.py                 # Evaluation & metrics tab
+│   ├── overview.py                   # Overview dashboard tab
+│   ├── styles.py                     # CSS styles and theming
+│   ├── upload.py                     # File upload & extraction tab
+│   └── utils.py                      # Utility functions for UI
 │
 ├── 📁 tests/                         # Testing & evaluation
 │   ├── evaluate_extraction.py        # Ground truth evaluation
@@ -720,9 +732,245 @@ if vendor:
 
 ---
 
+## 🎨 Streamlit UI Components
+
+### 9. `components/__init__.py`
+
+**Purpose:** Package initialization file that makes `components/` a Python package.
+
+**Why It Exists:**
+- Allows importing components as `from components.upload import show_upload_tab`
+- Provides clean package namespace
+- Enables modular UI architecture
+
+---
+
+### 10. `components/utils.py`
+
+**Purpose:** Utility functions shared across Streamlit UI components.
+
+**Key Functions:**
+
+1. **`init_session_state()`**
+   - Initializes all session state variables
+   - Sets up database, dataframes, extraction results
+   - Manages file uploader state
+
+2. **`init_database()`**
+   - Creates or retrieves database connection
+   - Caches connection in session state
+   - Handles initialization errors gracefully
+
+3. **`load_invoices_data()`**
+   - Loads all invoices from database into pandas DataFrame
+   - Handles date conversion
+   - Returns empty DataFrame on error
+
+4. **`extract_invoice(uploaded_file)`**
+   - Processes uploaded file through extraction pipeline
+   - Saves results to database
+   - Returns extraction result dictionary
+   - Handles temporary file cleanup
+
+5. **`display_extraction_result(result)`**
+   - Renders extraction results in UI
+   - Shows success/warning/error status boxes
+   - Displays invoice details and line items
+   - Provides manual review workflow for failed extractions
+
+6. **`extract_from_data_folder()`**
+   - Scans `data/` folder for invoice files
+   - Returns list of supported file paths
+   - Supports PDF and image formats
+
+**Why It Exists:**
+- **Code reuse:** Shared functions across tabs
+- **Consistency:** Unified data loading/display
+- **Maintainability:** Single source for UI utilities
+
+**Usage:**
+```python
+from components.utils import load_invoices_data, extract_invoice
+
+# Load data
+df = load_invoices_data()
+
+# Extract from uploaded file
+result = extract_invoice(uploaded_file)
+```
+
+---
+
+### 11. `components/styles.py`
+
+**Purpose:** Centralized CSS styling for the Streamlit dashboard.
+
+**Key Features:**
+- **Modern Design:** Gradient backgrounds, smooth animations
+- **Custom Components:** Styled cards, metrics, file lists
+- **Responsive:** Works on different screen sizes
+- **Theme Consistency:** Unified color scheme and typography
+
+**Main Style Categories:**
+- Global styles (fonts, colors)
+- Header and navigation
+- Card components
+- Metric displays
+- File upload area
+- Status messages
+- Progress indicators
+- Dark theme file lists
+
+**Why It Exists:**
+- **Consistency:** Single source for all styling
+- **Maintainability:** Easy to update theme
+- **Customization:** Override Streamlit defaults
+- **Professional Look:** Modern, polished UI
+
+**Usage:**
+```python
+from components.styles import STYLES
+
+# Apply in streamlit_app.py
+st.markdown(STYLES, unsafe_allow_html=True)
+```
+
+---
+
+### 12. `components/overview.py`
+
+**Purpose:** Main dashboard overview tab showing high-level statistics and recent invoices.
+
+**Features:**
+- Summary metrics (total invoices, amount, vendors)
+- Recent invoices list
+- Quick stats cards
+- Data refresh functionality
+
+**Key Functions:**
+- `show_overview_tab()` - Main entry point
+
+**Why It Exists:**
+- **Dashboard Home:** First view users see
+- **Quick Insights:** High-level overview
+- **Navigation Hub:** Entry point to other tabs
+
+---
+
+### 13. `components/upload.py`
+
+**Purpose:** File upload and extraction interface with batch processing support.
+
+**Features:**
+- **Drag-and-drop upload area:** Custom styled upload zone
+- **Batch extraction:** Process multiple files
+- **Progress tracking:** Real-time extraction status
+- **Stop functionality:** Cancel running extractions
+- **Data folder extraction:** Process all files from `data/` folder
+- **File list display:** Shows uploaded files with status
+- **Result visualization:** Displays extraction results
+
+**Key Functions:**
+- `show_upload_tab()` - Main entry point
+
+**Why It Exists:**
+- **User Interface:** Primary way to add invoices
+- **Batch Operations:** Handle multiple files efficiently
+- **User Feedback:** Visual progress and status updates
+- **Workflow Management:** Stop/resume extraction
+
+---
+
+### 14. `components/database.py`
+
+**Purpose:** Database browser with filtering, searching, and export capabilities.
+
+**Features:**
+- **Invoice Browser:** View all invoices in database
+- **Filters:** By vendor, date range, extraction method
+- **Line Items Viewer:** Detailed line item inspection
+- **Export:** CSV and JSON download
+- **Empty Database:** Database management tool
+- **Summary Metrics:** Quick statistics display
+
+**Key Functions:**
+- `show_database_tab()` - Main entry point
+
+**Why It Exists:**
+- **Data Exploration:** Browse extracted invoices
+- **Filtering:** Find specific invoices
+- **Export:** Download data for external use
+- **Management:** Database maintenance tools
+
+---
+
+### 15. `components/analytics.py`
+
+**Purpose:** Data visualization and analytics dashboard.
+
+**Features:**
+- **Time Series Charts:** Invoices over time
+- **Vendor Analysis:** Spend by vendor (bar chart)
+- **Method Distribution:** Extraction methods (pie chart)
+- **Summary Statistics:** Average, median, min, max, std dev, total
+
+**Key Functions:**
+- `show_analytics_tab()` - Main entry point
+
+**Why It Exists:**
+- **Insights:** Visualize invoice trends
+- **Analysis:** Understand spending patterns
+- **Reporting:** Generate business insights
+- **Method Performance:** See which extraction methods are used
+
+---
+
+### 16. `components/evaluation.py`
+
+**Purpose:** System performance evaluation and cost analysis.
+
+**Features:**
+- **Method Performance:** Statistics by extraction method
+- **Cost Analysis:** Actual vs pure vision costs
+- **Savings Calculator:** Percentage and dollar savings
+- **Accuracy Metrics:** F1 score, precision, recall display
+
+**Key Functions:**
+- `show_evaluation_tab()` - Main entry point
+
+**Why It Exists:**
+- **Performance Monitoring:** Track system accuracy
+- **Cost Optimization:** Demonstrate savings
+- **Quality Assurance:** Show evaluation results
+- **Metrics Display:** System performance dashboard
+
+---
+
+### 17. `components/about.py`
+
+**Purpose:** System documentation and information page.
+
+**Features:**
+- System version and tech stack
+- Feature list
+- Architecture overview
+- Performance metrics
+- Technology details
+
+**Key Functions:**
+- `show_about_tab()` - Main entry point
+
+**Why It Exists:**
+- **Documentation:** In-app system information
+- **Onboarding:** Help users understand system
+- **Credits:** Show technology stack
+- **Reference:** Quick access to system details
+
+---
+
 ## 🛠️ Scripts & Utilities
 
-### 9. `scripts/diagnose_extraction.py`
+### 18. `scripts/diagnose_extraction.py`
 
 **Purpose:** Comprehensive diagnostic tool to debug extraction failures.
 
@@ -862,7 +1110,7 @@ python scripts/diagnose_extraction.py
 
 ---
 
-### 10. `scripts/empty_db.py`
+### 19. `scripts/empty_db.py`
 
 **Purpose:** Database management utility to reset/clear invoice data.
 
@@ -942,7 +1190,7 @@ python scripts/empty_db.py /path/to/invoices.db
 
 ## 🧪 Tests & Evaluation
 
-### 11. `tests/evaluate_extraction.py`
+### 20. `tests/evaluate_extraction.py`
 
 **Purpose:** Automated evaluation system that compares extracted data against manually verified ground truth.
 
@@ -1061,7 +1309,7 @@ evaluator.export_results(results)
 
 ---
 
-### 12. `tests/test_evaluation.py`
+### 21. `tests/test_evaluation.py`
 
 **Purpose:** Quick automated test runner wrapper around evaluation.
 
@@ -1108,7 +1356,7 @@ python tests/test_evaluation.py
 
 ---
 
-### 13. `tests/ground_truth.json`
+### 22. `tests/ground_truth.json`
 
 **Purpose:** Manually verified "truth" data for 4 sample invoices.
 
@@ -1174,7 +1422,7 @@ python tests/test_evaluation.py
 
 ## 📝 Configuration Files
 
-### 14. `requirements.txt`
+### 23. `requirements.txt`
 
 **Purpose:** Python package dependencies for the project.
 
@@ -1233,7 +1481,7 @@ pip install -r requirements.txt
 
 ---
 
-### 15. `.gitignore`
+### 24. `.gitignore`
 
 **Purpose:** Tells Git which files/folders to ignore (not commit).
 
@@ -1292,7 +1540,7 @@ Manual review/
 
 ---
 
-### 16. `vendor_registry.json`
+### 25. `vendor_registry.json`
 
 **Purpose:** Auto-generated JSON file storing vendor patterns.
 
@@ -1344,7 +1592,7 @@ Manual review/
 
 ---
 
-### 17. `invoices.db`
+### 26. `invoices.db`
 
 **Purpose:** SQLite database storing extracted invoice data.
 
@@ -1411,7 +1659,7 @@ rm invoices.db  # Will be recreated on next run
 
 ## 🚀 Main Applications
 
-### 18. `main.py`
+### 27. `main.py`
 
 **Purpose:** Command-line interface (CLI) for batch invoice processing.
 
@@ -1514,7 +1762,7 @@ DEBUG_REGEX=true python main.py invoice.pdf
 
 ---
 
-### 19. `streamlit_app.py`
+### 28. `streamlit_app.py`
 
 **Purpose:** Interactive web dashboard for invoice management and analytics.
 
@@ -1591,7 +1839,7 @@ streamlit run streamlit_app.py --server.address 0.0.0.0
 
 ## 📖 Documentation Files
 
-### 20. `README.md`
+### 29. `README.md`
 
 **Purpose:** Main project documentation and entry point.
 
@@ -1623,7 +1871,7 @@ streamlit run streamlit_app.py --server.address 0.0.0.0
 
 ---
 
-### 21. `TRADE_OFFS_ANALYSIS.md`
+### 30. `TRADE_OFFS_ANALYSIS.md`
 
 **Purpose:** Detailed comparison of extraction methods with trade-off analysis.
 
@@ -1644,7 +1892,7 @@ streamlit run streamlit_app.py --server.address 0.0.0.0
 
 ---
 
-### 22. `Doc.md`
+### 31. `Doc.md`
 
 **Purpose:** Additional documentation (purpose unclear from filename).
 
@@ -1659,7 +1907,7 @@ streamlit run streamlit_app.py --server.address 0.0.0.0
 
 ## 📂 Data & Output Directories
 
-### 23. `data/`
+### 32. `data/`
 
 **Purpose:** Input directory for invoice files (PDFs and images).
 
@@ -1702,7 +1950,7 @@ python main.py data/ -r
 
 ---
 
-### 24. `output/` or `outputs/`
+### 33. `output/` or `outputs/`
 
 **Purpose:** Extraction results (JSON files, CSV exports).
 
@@ -1734,7 +1982,7 @@ output/
 
 ---
 
-### 25. `Manual review/`
+### 34. `Manual review/`
 
 **Purpose:** Failed extractions requiring human review.
 
@@ -2034,12 +2282,13 @@ DEBUG_REGEX=true python main.py invoice.pdf
 
 ## 🎉 Summary
 
-This invoice extraction system consists of **25+ files** organized into:
+This invoice extraction system consists of **34+ files** organized into:
 
 - **8 Core Modules** - Extraction pipeline, database, config
+- **8 UI Components** - Streamlit dashboard tabs and utilities
 - **2 Main Applications** - CLI and dashboard
-- **5 Utility Scripts** - Diagnostics, testing, management
-- **4 Test Files** - Evaluation and ground truth
+- **2 Utility Scripts** - Diagnostics, testing, management
+- **3 Test Files** - Evaluation and ground truth
 - **6+ Config/Doc Files** - Settings, documentation, patterns
 
 **Key Design Principles:**
